@@ -472,6 +472,9 @@ function render(){
 
   document.getElementById('metaLine').textContent = `veri: ${d.label}  ·  fiyat: ${d.price}  ·  demo sentez`;
 
+  const totalAgents = d.macro.length + d.teknik.length + d.pozisyon.length;
+  document.getElementById('ocAgentsCount').textContent = `${totalAgents}/${totalAgents} AGENT`;
+
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
   document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');
   document.getElementById('pozisyonCards').innerHTML = d.pozisyon.map(agentCardHTML).join('');
