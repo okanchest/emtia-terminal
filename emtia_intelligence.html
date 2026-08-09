@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Emtia Intelligence</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fraunces:ital,wght@1,500&display=swap');
+
+  :root{
+    --bg:#0B0904;
+    --bg-glow: radial-gradient(ellipse at 50% 0%, rgba(212,162,76,0.07), transparent 55%);
+    --panel:#15120A;
+    --panel-2:#1B1710;
+    --border:#2C2415;
+    --border-soft:#221C10;
+    --text:#E9E2D2;
+    --muted:#8A7F65;
+    --gold:#D4A24C;
+    --gold-dim:rgba(212,162,76,0.14);
+    --on:#3FC988;
+    --off:#E5555A;
+    --neutral:#8A7F65;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100%;}
+  body{background-image:var(--bg-glow);}
+  ::selection{background:var(--gold); color:#0B0904;}
+
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 22px; border-bottom:1px solid var(--border-soft);
+    flex-wrap:wrap; gap:10px;
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand .mark{
+    width:26px; height:26px; border-radius:6px;
+    background:linear-gradient(135deg, var(--gold), #8A6420);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; color:#0B0904; font-size:13px;
+  }
+  .brand .title{font-family:'Fraunces',serif; font-style:italic; font-size:17px; letter-spacing:0.2px;}
+  .brand .title b{font-style:normal; font-weight:600;}
+  .brand .meta{font-size:10.5px; color:var(--muted); margin-top:1px;}
+
+  .topbar-right{display:flex; align-items:center; gap:18px; flex-wrap:wrap;}
+  .selector{
+    background:var(--panel-2); border:1px solid var(--border);
+    color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:12px;
+    padding:6px 10px; border-radius:5px; cursor:pointer;
+  }
+  .risk-slider-wrap{display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted);}
+  .risk-track{
+    width:110px; height:5px; border-radius:3px;
+    background:linear-gradient(90deg, var(--off), var(--neutral), var(--on));
+    position:relative;
+  }
+  .risk-dot{
+    position:absolute; top:50%; width:10px; height:10px; border-radius:50%;
+    background:#fff; border:2px solid var(--bg); transform:translate(-50%,-50%);
+    box-shadow:0 0 6px rgba(0,0,0,0.5);
+  }
+  .refresh-btn{
+    width:30px; height:30px; border-radius:6px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--gold); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:14px; transition:transform .4s ease;
+  }
+  .refresh-btn:hover svg{transform:rotate(180deg);}
+  .refresh-btn svg{transition:transform .4s ease;}
+
+  .ticker-strip{
+    display:flex; align-items:center; gap:22px; padding:8px 22px;
+    border-bottom:1px solid var(--border-soft); font-family:'IBM Plex Mono',monospace; font-size:12px;
+    flex-wrap:wrap;
+  }
+  .ticker-strip .item{color:var(--muted);}
+  .ticker-strip .item b{color:var(--text); font-weight:600; margin-left:5px;}
+  .ticker-strip .item .up{color:var(--on);}
+  .ticker-strip .item .down{color:var(--off);}
+
+  /* ---------- Desks ---------- */
+  .wrap{max-width:1440px; margin:0 auto; padding:22px 22px 40px 22px;}
+
+  .desks-row{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:8px;
+  }
+  @media(max-width:980px){ .desks-row{grid-template-columns:1fr;} }
+
+  .desk{ }
+  .desk-heading{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:1.6px;
+    color:var(--muted); text-transform:uppercase; margin-bottom:9px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .desk-heading::after{content:""; flex:1; height:1px; background:var(--border-soft);}
+
+  .agent-cards{display:flex; flex-direction:column; gap:8px;}
+  .agent-card{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:8px; padding:11px 12px;
+    position:relative;
+  }
+  .agent-card .row1{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .agent-card .agent-name{font-size:12px; font-weight:600; display:flex; align-items:center; gap:7px;}
+  .status-dot{width:6px; height:6px; border-radius:50%; flex:none;}
+  .status-dot.on{background:var(--on); box-shadow:0 0 6px var(--on);}
+  .status-dot.off{background:var(--off); box-shadow:0 0 6px var(--off);}
+  .status-dot.neutral{background:var(--neutral);}
+  .badge{
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:0.4px;
+    padding:2px 7px; border-radius:4px;
+  }
+  .badge.on{color:var(--on); background:rgba(63,201,136,0.12); border:1px solid rgba(63,201,136,0.3);}
+  .badge.off{color:var(--off); background:rgba(229,85,90,0.12); border:1px solid rgba(229,85,90,0.3);}
+  .badge.neutral{color:var(--neutral); background:rgba(138,127,101,0.14); border:1px solid var(--border);}
+  .agent-note{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
+
+  /* ---------- Graph / Orchestrator ---------- */
+  .graph{
+    position:relative; margin-top:26px; padding-top:34px;
+    min-height:300px;
+  }
+  svg.connectors{position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;}
+  svg.connectors line{stroke:var(--border); stroke-width:1;}
+  svg.connectors line.active{stroke:var(--gold); stroke-opacity:0.55;}
+  svg.connectors circle{fill:var(--gold);}
+
+  .desk-node-row{display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;}
+  @media(max-width:980px){ .desk-node-row{grid-template-columns:1fr;} }
+  .desk-node{
+    justify-self:center;
+    display:flex; align-items:center; gap:8px;
+    background:var(--panel-2); border:1px solid var(--border);
+    padding:7px 13px; border-radius:20px;
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+  }
+  .desk-node .dtag{color:var(--gold); font-weight:600;}
+
+  .orchestrator-row{display:flex; justify-content:center; margin-top:70px;}
+  .orchestrator{
+    width:min(560px, 92%);
+    background:var(--panel); border:1px solid var(--gold);
+    border-radius:12px; padding:20px 22px;
+    box-shadow:0 0 40px rgba(212,162,76,0.08);
+  }
+  .orchestrator .oc-head{
+    display:flex; align-items:center; gap:8px; margin-bottom:14px;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--gold); letter-spacing:1px;
+  }
+  .oc-bias-row{display:flex; justify-content:space-between; padding:6px 0; font-size:12.5px; border-bottom:1px solid var(--border-soft);}
+  .oc-bias-row:last-of-type{border-bottom:none;}
+  .oc-bias-row .k{color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:10.5px;}
+  .oc-bias-row .v{font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px;}
+  .oc-note{font-size:12px; color:var(--text); line-height:1.55; margin:14px 0; opacity:0.85;}
+  .oc-foot{
+    display:flex; justify-content:space-between; margin-top:14px; padding-top:12px;
+    border-top:1px solid var(--border-soft);
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted);
+  }
+  .live-dot{width:6px; height:6px; border-radius:50%; background:var(--on); display:inline-block; margin-right:5px; box-shadow:0 0 6px var(--on); animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.35;}}
+
+  footer{
+    text-align:center; color:var(--muted); font-size:11px; margin-top:34px; line-height:1.6;
+  }
+  footer code{background:var(--panel-2); padding:1px 5px; border-radius:3px; color:var(--gold); font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark">E</div>
+    <div>
+      <div class="title">Emtia <b>Intelligence</b></div>
+      <div class="meta mono" id="metaLine">veri —  ·  son sentez —</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <select class="selector" id="instrumentSelect"></select>
+    <span class="mono" id="liveBadge" style="font-size:10px; padding:3px 8px; border-radius:4px; border:1px solid var(--border); color:var(--muted);">BAĞLANIYOR…</span>
+    <div class="risk-slider-wrap">
+      <span>RISK</span>
+      <div class="risk-track"><div class="risk-dot" id="riskDot" style="left:50%"></div></div>
+      <span id="riskLabel" class="mono">NÖTR</span>
+    </div>
+    <div class="refresh-btn" id="refreshBtn" title="Verileri yenile">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 10a8 8 0 0 0-14.6-3.4M4 14a8 8 0 0 0 14.6 3.4"/></svg>
+    </div>
+  </div>
+</div>
+
+<div class="ticker-strip" id="tickerStrip"></div>
+
+<div class="wrap">
+
+  <div class="desks-row">
+    <div class="desk">
+      <div class="desk-heading">Macro Desk</div>
+      <div class="agent-cards" id="macroCards"></div>
+    </div>
+    <div class="desk">
+      <div class="desk-heading">Teknik Desk</div>
+      <div class="agent-cards" id="teknikCards"></div>
+    </div>
+    <div class="desk">
+      <div class="desk-heading">Pozisyonlama Desk</div>
+      <div class="agent-cards" id="pozisyonCards"></div>
+    </div>
+  </div>
+
+  <div class="graph" id="graphArea">
+    <svg class="connectors" id="connectorSvg"></svg>
+    <div class="desk-node-row">
+      <div class="desk-node" id="nodeMacro"><span class="dtag">DESK</span> Macro <span id="macroVerdictTag" class="badge neutral">NEUTRAL</span></div>
+      <div class="desk-node" id="nodeTeknik"><span class="dtag">DESK</span> Teknik <span id="teknikVerdictTag" class="badge neutral">NEUTRAL</span></div>
+      <div class="desk-node" id="nodePozisyon"><span class="dtag">DESK</span> Pozisyon <span id="pozisyonVerdictTag" class="badge neutral">NEUTRAL</span></div>
+    </div>
+
+    <div class="orchestrator-row">
+      <div class="orchestrator" id="orchestratorNode">
+        <div class="oc-head">◆ ORCHESTRATOR</div>
+        <div class="oc-bias-row"><span class="k">HTF (Uzun Vade)</span><span class="v" id="biasHTF">—</span></div>
+        <div class="oc-bias-row"><span class="k">MTF (Orta Vade)</span><span class="v" id="biasMTF">—</span></div>
+        <div class="oc-bias-row"><span class="k">LTF (Kısa Vade)</span><span class="v" id="biasLTF">—</span></div>
+        <div class="oc-note" id="ocNote">—</div>
+        <div class="oc-foot">
+          <span><span class="live-dot"></span>STREAM LIVE</span>
+          <span id="ocAgentsCount">9/9 AGENT</span>
+          <span id="ocClock">00:00:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Bu ekran artık <b style="color:var(--text)">gerçek veri backend'ine</b> bağlanmayı deniyor (<code>http://localhost:8000</code>).
+    Backend çalışmıyorsa otomatik olarak demo veriye düşer ve üstteki rozet bunu belirtir.
+    Backend'i çalıştırmak için: <code>pip install -r requirements.txt</code> sonra <code>uvicorn main:app --reload --port 8000</code>.
+    Kurallar (SMA, RSI, COT percentile eşikleri) demonstrasyon amaçlıdır, yatırım tavsiyesi değildir — kendi stratejine göre <code>backend/main.py</code> içindeki eşik değerlerini değiştirebilirsin.
+  </footer>
+</div>
+
+<script>
+// ============================================================
+// ÖRNEK VERİ SETİ — her enstrüman için 3 desk x 3 agent + genel sentez.
+// Gerçek kullanımda bu objeyi canlı hesaplamalarla (COT, RSI, DXY vs.)
+// dolduran bir backend/script besleyebilirsin.
+// ============================================================
+const API_BASE = "http://localhost:8000";
+
+const DEMO_DATA = {
+  altin: {
+    label:"Altın (XAU/USD)", price:"3,412.50", changePct:0.42,
+    macro:[
+      {name:"Dolar & Reel Faiz", verdict:"on", note:"DXY zayıflıyor, ABD reel getirileri geriliyor."},
+      {name:"Enflasyon (CPI/PCE)", verdict:"neutral", note:"Son veri beklentiyle uyumlu geldi."},
+      {name:"Jeopolitik Risk", verdict:"on", note:"Güvenli liman talebi yüksek seyrediyor."},
+    ],
+    teknik:[
+      {name:"Trend / Momentum", verdict:"on", note:"Fiyat 50 ve 200 günlük ortalamanın üstünde."},
+      {name:"Volatilite (ATR)", verdict:"neutral", note:"Ortalama aralıkta, sıkışma yok."},
+      {name:"Hacim Profili", verdict:"on", note:"Son kırılım güçlü hacimle teyit edildi."},
+    ],
+    pozisyon:[
+      {name:"COT Net Pozisyon", verdict:"off", note:"Spekülatif net long tarihsel üst banda yakın."},
+      {name:"ETF Akışları", verdict:"neutral", note:"Son 5 günde yatay seyir."},
+      {name:"Vadeli Eğrisi", verdict:"on", note:"Hafif contango, stres sinyali yok."},
+    ],
+    bias:{htf:"RISK-ON", mtf:"NEUTRAL", ltf:"RISK-OFF"},
+    note:"Makro rüzgar altını destekliyor, ancak spekülatif pozisyonlama aşırı long — kısa vadede sağlıklı bir düzeltme riski taşıyor."
+  },
+  gumus: {
+    label:"Gümüş (XAG/USD)", price:"38.94", changePct:-0.85,
+    macro:[
+      {name:"Dolar & Reel Faiz", verdict:"on", note:"Dolar zayıflığı gümüşü de destekliyor."},
+      {name:"Sanayi Talebi", verdict:"neutral", note:"Güneş paneli talebi istikrarlı, PMI karışık."},
+      {name:"Jeopolitik Risk", verdict:"neutral", note:"Altına göre daha az güvenli liman etkisi."},
+    ],
+    teknik:[
+      {name:"Trend / Momentum", verdict:"off", note:"Kısa vadeli momentum zayıflıyor."},
+      {name:"Volatilite (ATR)", verdict:"off", note:"Volatilite altına göre belirgin yüksek."},
+      {name:"Hacim Profili", verdict:"neutral", note:"Hacimde net bir yön sinyali yok."},
+    ],
+    pozisyon:[
+      {name:"COT Net Pozisyon", verdict:"off", note:"RSI 70 üstünde, pozisyonlama aşırı ısınmış."},
+      {name:"ETF Akışları", verdict:"neutral", note:"Girişler yavaşladı."},
+      {name:"Vadeli Eğrisi", verdict:"neutral", note:"Normal aralıkta."},
+    ],
+    bias:{htf:"NEUTRAL", mtf:"RISK-OFF", ltf:"RISK-OFF"},
+    note:"Gümüş altına göre daha aşırı ısınmış görünüyor — teknik ve pozisyonlama tarafı temkinli olmayı işaret ediyor."
+  },
+  platin: {
+    label:"Platin (XPT/USD)", price:"1,942.90", changePct:-1.43,
+    macro:[
+      {name:"Otomotiv Talebi", verdict:"neutral", note:"Katalitik konvertör talebi yatay."},
+      {name:"Güney Afrika Arzı", verdict:"off", note:"Madencilik çıktısında toparlanma sinyali."},
+      {name:"Küresel Büyüme (PMI)", verdict:"off", note:"İmalat PMI'lar daralma bölgesine yakın."},
+    ],
+    teknik:[
+      {name:"Trend / Momentum", verdict:"off", note:"Düşüş trendi kısa vadede devam ediyor."},
+      {name:"Volatilite (ATR)", verdict:"neutral", note:"Normal aralıkta."},
+      {name:"Hacim Profili", verdict:"off", note:"Düşüşler hacimle teyit ediliyor."},
+    ],
+    pozisyon:[
+      {name:"COT Net Pozisyon", verdict:"neutral", note:"Nötr bölgede, aşırılık yok."},
+      {name:"ETF Akışları", verdict:"off", note:"Son haftalarda net çıkış var."},
+      {name:"Vadeli Eğrisi", verdict:"neutral", note:"Normal aralıkta."},
+    ],
+    bias:{htf:"RISK-OFF", mtf:"RISK-OFF", ltf:"NEUTRAL"},
+    note:"Zayıf sanayi görünümü ve arz toparlanması platin üzerinde baskı yaratıyor; kısa vadede tepki hareketi olası."
+  },
+  paladyum: {
+    label:"Paladyum (XPD/USD)", price:"1,373.09", changePct:-1.32,
+    macro:[
+      {name:"Otomotiv Talebi", verdict:"off", note:"Elektrikli araca geçiş talebi yapısal olarak baskılıyor."},
+      {name:"Rusya Arzı", verdict:"neutral", note:"İhracat akışında belirgin bir kesinti yok."},
+      {name:"Küresel Büyüme (PMI)", verdict:"off", note:"İmalat zayıf seyrediyor."},
+    ],
+    teknik:[
+      {name:"Trend / Momentum", verdict:"off", note:"Uzun vadeli düşüş trendi sürüyor."},
+      {name:"Volatilite (ATR)", verdict:"neutral", note:"Normal aralıkta."},
+      {name:"Hacim Profili", verdict:"off", note:"Zayıf hacimle sığ toparlanmalar."},
+    ],
+    pozisyon:[
+      {name:"COT Net Pozisyon", verdict:"neutral", note:"Net pozisyon nötr bölgede."},
+      {name:"ETF Akışları", verdict:"off", note:"Sürekli net çıkış eğilimi."},
+      {name:"Vadeli Eğrisi", verdict:"neutral", note:"Normal aralıkta."},
+    ],
+    bias:{htf:"RISK-OFF", mtf:"RISK-OFF", ltf:"RISK-OFF"},
+    note:"Yapısal talep zayıflığı üç vadede de baskın — güçlü bir katalizör olmadan trend değişimi zor görünüyor."
+  },
+  bakir: {
+    label:"Bakır (HG1!)", price:"6.32", changePct:0.20,
+    macro:[
+      {name:"Çin PMI", verdict:"neutral", note:"İmalat PMI 50 sınırına yakın, net yön yok."},
+      {name:"Arz Kesintileri", verdict:"on", note:"İhracat yasağı haberleri arz endişesini artırdı."},
+      {name:"Küresel Büyüme", verdict:"neutral", note:"Karışık sinyaller."},
+    ],
+    teknik:[
+      {name:"Trend / Momentum", verdict:"on", note:"Fiyat kademeli yükseliş trendinde."},
+      {name:"Volatilite (ATR)", verdict:"neutral", note:"Normal aralıkta."},
+      {name:"Hacim Profili", verdict:"on", note:"Yükselişler hacimle destekleniyor."},
+    ],
+    pozisyon:[
+      {name:"COT Net Pozisyon", verdict:"neutral", note:"Nötr bölgede."},
+      {name:"Borsa Stokları (LME/COMEX)", verdict:"on", note:"Stoklar altı aylık düşük seviyelerde."},
+      {name:"Vadeli Eğrisi", verdict:"on", note:"Backwardation, fiziksel sıkılık işareti."},
+    ],
+    bias:{htf:"RISK-ON", mtf:"RISK-ON", ltf:"NEUTRAL"},
+    note:"Arz tarafı endişeleri ve düşük borsa stokları bakırı destekliyor; makro büyüme tarafı henüz net teyit vermiyor."
+  },
+  bugday: {
+    label:"Buğday (ZW1!)", price:"598.25", changePct:1.15,
+    macro:[
+      {name:"USDA WASDE", verdict:"on", note:"Son rapor stok tahminlerini aşağı revize etti."},
+      {name:"Hava Durumu / Rekolte", verdict:"neutral", note:"Bölgesel kuraklık riski izleniyor."},
+      {name:"İhracat / Jeopolitik", verdict:"on", note:"Karadeniz koridorunda belirsizlik sürüyor."},
+    ],
+    teknik:[
+      {name:"Trend / Momentum", verdict:"on", note:"Kısa vadeli yükseliş ivmesi kazandı."},
+      {name:"Volatilite (ATR)", verdict:"off", note:"Mevsimsel olarak yüksek volatilite."},
+      {name:"Hacim Profili", verdict:"neutral", note:"Orta seviyede katılım."},
+    ],
+    pozisyon:[
+      {name:"COT Net Pozisyon", verdict:"neutral", note:"Spekülatif pozisyon nötr bölgede."},
+      {name:"İhracat Satışları", verdict:"on", note:"Haftalık satışlar beklentinin üzerinde."},
+      {name:"Vadeli Eğrisi", verdict:"neutral", note:"Normal aralıkta."},
+    ],
+    bias:{htf:"NEUTRAL", mtf:"RISK-ON", ltf:"RISK-ON"},
+    note:"Arz endişeleri ve güçlü ihracat verisi kısa vadeli yükselişi destekliyor; mevsimsel volatiliteye dikkat."
+  },
+};
+
+const VERDICT_LABEL = {on:"RISK-ON", off:"RISK-OFF", neutral:"NEUTRAL"};
+
+// DATA: aktif olarak ekranda kullanılan veri kümesi. Başlangıçta demo
+// veriyle dolu; backend'den canlı veri gelirse ilgili anahtar canlı
+// veriyle değiştirilir.
+const DATA = JSON.parse(JSON.stringify(DEMO_DATA));
+const liveFlags = {}; // key -> true/false (o enstrüman için canlı veri geldi mi)
+
+let currentKey = "altin";
+
+function buildSelector(){
+  const sel = document.getElementById('instrumentSelect');
+  sel.innerHTML = Object.entries(DEMO_DATA).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
+  sel.value = currentKey;
+  sel.addEventListener('change', e=>{ currentKey = e.target.value; loadInstrument(currentKey); });
+}
+
+function setLiveBadge(){
+  const el = document.getElementById('liveBadge');
+  if(liveFlags[currentKey] === true){
+    el.textContent = "● CANLI VERİ";
+    el.style.color = "var(--on)";
+    el.style.borderColor = "rgba(63,201,136,0.35)";
+  } else if(liveFlags[currentKey] === false){
+    el.textContent = "● DEMO VERİ (backend'e ulaşılamadı)";
+    el.style.color = "var(--off)";
+    el.style.borderColor = "rgba(229,85,90,0.35)";
+  } else {
+    el.textContent = "BAĞLANIYOR…";
+    el.style.color = "var(--muted)";
+    el.style.borderColor = "var(--border)";
+  }
+}
+
+async function loadInstrument(key){
+  try{
+    const res = await fetch(`${API_BASE}/api/instrument/${key}`, { signal: AbortSignal.timeout(8000) });
+    if(!res.ok) throw new Error('backend hata döndürdü');
+    const live = await res.json();
+    DATA[key] = live;
+    liveFlags[key] = true;
+  }catch(e){
+    // Backend çalışmıyor / erişilemiyorsa demo veriye geri düş
+    DATA[key] = DEMO_DATA[key];
+    liveFlags[key] = false;
+  }
+  if(currentKey === key){
+    render();
+  }
+}
+
+async function loadAllTicker(){
+  try{
+    const res = await fetch(`${API_BASE}/api/all`, { signal: AbortSignal.timeout(8000) });
+    if(!res.ok) throw new Error('backend hata döndürdü');
+    const all = await res.json();
+    Object.entries(all).forEach(([k,v])=>{
+      if(v.price != null){
+        DATA[k] = { ...DATA[k], price:v.price, changePct:v.changePct };
+      }
+    });
+  }catch(e){
+    // ticker için demo fiyatlar kalır
+  }
+  renderTicker();
+}
+
+function agentCardHTML(a){
+  return `
+  <div class="agent-card">
+    <div class="row1">
+      <div class="agent-name"><span class="status-dot ${a.verdict}"></span>${a.name}</div>
+      <span class="badge ${a.verdict}">${VERDICT_LABEL[a.verdict]}</span>
+    </div>
+    <div class="agent-note">${a.note}</div>
+  </div>`;
+}
+
+function deskVerdict(agents){
+  const score = agents.reduce((s,a)=> s + (a.verdict==='on'?1: a.verdict==='off'?-1:0), 0);
+  if(score>0) return 'on';
+  if(score<0) return 'off';
+  return 'neutral';
+}
+
+function renderTicker(){
+  const el = document.getElementById('tickerStrip');
+  el.innerHTML = Object.entries(DATA).map(([k,v])=>{
+    const up = v.changePct>=0;
+    return `<span class="item">${v.label.split(' ')[0]} <b class="${up?'up':'down'}">${v.price} ${up?'▲':'▼'} %${Math.abs(v.changePct).toFixed(2)}</b></span>`;
+  }).join('');
+}
+
+function render(){
+  const d = DATA[currentKey];
+
+  document.getElementById('metaLine').textContent = `veri: ${d.label}  ·  fiyat: ${d.price}  ·  demo sentez`;
+
+  document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
+  document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');
+  document.getElementById('pozisyonCards').innerHTML = d.pozisyon.map(agentCardHTML).join('');
+
+  const mv = deskVerdict(d.macro), tv = deskVerdict(d.teknik), pv = deskVerdict(d.pozisyon);
+  setTag('macroVerdictTag', mv);
+  setTag('teknikVerdictTag', tv);
+  setTag('pozisyonVerdictTag', pv);
+
+  document.getElementById('biasHTF').textContent = d.bias.htf;
+  document.getElementById('biasHTF').style.color = biasColor(d.bias.htf);
+  document.getElementById('biasMTF').textContent = d.bias.mtf;
+  document.getElementById('biasMTF').style.color = biasColor(d.bias.mtf);
+  document.getElementById('biasLTF').textContent = d.bias.ltf;
+  document.getElementById('biasLTF').style.color = biasColor(d.bias.ltf);
+  document.getElementById('ocNote').textContent = d.note;
+
+  // risk slider position from overall score
+  const overallScore = [d.bias.htf, d.bias.mtf, d.bias.ltf].reduce((s,b)=> s + (b==='RISK-ON'?1:b==='RISK-OFF'?-1:0), 0);
+  const pct = 50 + overallScore*16.5; // -3..3 -> spread across track
+  document.getElementById('riskDot').style.left = Math.max(6,Math.min(94,pct)) + '%';
+  document.getElementById('riskLabel').textContent = overallScore>0 ? 'RISK-ON' : overallScore<0 ? 'RISK-OFF' : 'NÖTR';
+
+  setLiveBadge();
+  drawConnectors();
+}
+
+function setTag(id, verdict){
+  const el = document.getElementById(id);
+  el.className = 'badge ' + verdict;
+  el.textContent = VERDICT_LABEL[verdict];
+}
+
+function biasColor(label){
+  if(label==='RISK-ON') return 'var(--on)';
+  if(label==='RISK-OFF') return 'var(--off)';
+  return 'var(--neutral)';
+}
+
+function drawConnectors(){
+  const svg = document.getElementById('connectorSvg');
+  const area = document.getElementById('graphArea');
+  const areaRect = area.getBoundingClientRect();
+  svg.setAttribute('width', areaRect.width);
+  svg.setAttribute('height', areaRect.height);
+
+  const nodes = [document.getElementById('nodeMacro'), document.getElementById('nodeTeknik'), document.getElementById('nodePozisyon')];
+  const target = document.getElementById('orchestratorNode');
+  const tRect = target.getBoundingClientRect();
+  const tX = tRect.left + tRect.width/2 - areaRect.left;
+  const tY = tRect.top - areaRect.top;
+
+  let html = '';
+  nodes.forEach(n=>{
+    const r = n.getBoundingClientRect();
+    const x = r.left + r.width/2 - areaRect.left;
+    const y = r.bottom - areaRect.top;
+    const midY = y + (tY - y)*0.55;
+    html += `<path d="M ${x} ${y} C ${x} ${midY}, ${tX} ${midY}, ${tX} ${tY}" fill="none" stroke="var(--gold)" stroke-opacity="0.35" stroke-width="1.2"/>`;
+    html += `<circle cx="${x}" cy="${y}" r="2.5"/>`;
+  });
+  html += `<circle cx="${tX}" cy="${tY}" r="2.5"/>`;
+  svg.innerHTML = html;
+}
+
+function tickClock(){
+  document.getElementById('ocClock').textContent = new Date().toLocaleTimeString('tr-TR');
+}
+
+buildSelector();
+render();          // önce demo veriyle çizer (anında bir şey görünsün diye)
+loadAllTicker();    // sonra ticker'ı canlı fiyatlarla dener
+loadInstrument(currentKey); // ve seçili enstrümanı canlı veriyle dener
+tickClock();
+setInterval(tickClock, 1000);
+setInterval(()=> loadInstrument(currentKey), 5 * 60 * 1000); // 5 dakikada bir tazele
+setInterval(loadAllTicker, 5 * 60 * 1000);
+window.addEventListener('resize', drawConnectors);
+
+document.getElementById('refreshBtn').addEventListener('click', ()=>{
+  loadInstrument(currentKey);
+  loadAllTicker();
+});
+</script>
+</body>
+</html>
