@@ -91,6 +91,15 @@ def compute_rsi(close: pd.Series, period=14):
     return float(rsi.iloc[-1])
 
 
+def compute_macd(close: pd.Series, fast=12, slow=26, signal=9):
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    hist = macd_line - signal_line
+    return float(hist.iloc[-1]), float(hist.iloc[-2])
+
+
 def compute_atr(hist: pd.DataFrame, period=14):
     high, low, close = hist["High"], hist["Low"], hist["Close"]
     prev_close = close.shift(1)
@@ -137,10 +146,38 @@ def technical_agents(hist: pd.DataFrame):
     else:
         vol_v, vol_note = "neutral", "Hacimde belirgin bir teyit sinyali yok."
 
+    # 4) MACD
+    macd_hist_now, macd_hist_prev = compute_macd(close)
+    if macd_hist_now > 0 and macd_hist_prev <= 0:
+        macd_v, macd_note = "on", "MACD sinyal çizgisini yukarı kesti — momentum pozitife dönüyor."
+    elif macd_hist_now < 0 and macd_hist_prev >= 0:
+        macd_v, macd_note = "off", "MACD sinyal çizgisini aşağı kesti — momentum negatife dönüyor."
+    elif macd_hist_now > 0:
+        macd_v, macd_note = "on", "MACD pozitif bölgede, yükseliş momentumu sürüyor."
+    elif macd_hist_now < 0:
+        macd_v, macd_note = "off", "MACD negatif bölgede, düşüş momentumu sürüyor."
+    else:
+        macd_v, macd_note = "neutral", "MACD sıfıra yakın, net yön yok."
+
+    # 5) Destek / Direnç (son 20 gün)
+    recent20 = hist.tail(20)
+    high20 = float(recent20["High"].max())
+    low20 = float(recent20["Low"].min())
+    dist_to_high = (high20 - price) / price * 100
+    dist_to_low = (price - low20) / price * 100
+    if dist_to_high < 1:
+        sr_v, sr_note = "off", f"Fiyat 20 günlük direnç seviyesine ({high20:.2f}) çok yakın — satış baskısı gelebilir."
+    elif dist_to_low < 1:
+        sr_v, sr_note = "on", f"Fiyat 20 günlük destek seviyesine ({low20:.2f}) çok yakın — tepki alımı gelebilir."
+    else:
+        sr_v, sr_note = "neutral", f"Fiyat destek ({low20:.2f}) ile direnç ({high20:.2f}) arasında, aralığın ortasında."
+
     return [
         {"name": "Trend / Momentum (SMA50/200)", "verdict": trend_v, "note": trend_note},
         {"name": "RSI (14)", "verdict": rsi_v, "note": rsi_note},
         {"name": "Hacim Teyidi", "verdict": vol_v, "note": vol_note},
+        {"name": "MACD (12/26/9)", "verdict": macd_v, "note": macd_note},
+        {"name": "Destek / Direnç (20G)", "verdict": sr_v, "note": sr_note},
     ], price, float((close.iloc[-1] / close.iloc[-2] - 1) * 100)
 
 
@@ -166,20 +203,42 @@ def macro_agents():
             v, note = "neutral", "DXY verisi şu an alınamadı."
         agents.append({"name": "Dolar Endeksi (DXY)", "verdict": v, "note": note})
 
-        # ABD 10Y getirisi
+        # ABD 10Y Reel Getiri (TIPS)
         try:
-            tnx = yf.Ticker("^TNX").history(period="3mo")
-            recent = tnx["Close"].iloc[-10:].mean()
-            older = tnx["Close"].iloc[-30:-10].mean()
-            if recent < older * 0.98:
-                v, note = "on", f"10Y getiri geriliyor ({recent/10:.2f}%) — reel getiri düşüşü değerli metalleri destekler."
-            elif recent > older * 1.02:
-                v, note = "off", f"10Y getiri yükseliyor ({recent/10:.2f}%) — fırsat maliyeti artıyor."
+            tips = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10")
+            tips.columns = ["date", "value"]
+            tips["value"] = pd.to_numeric(tips["value"], errors="coerce")
+            tips = tips.dropna()
+            recent = tips["value"].iloc[-10:].mean()
+            older = tips["value"].iloc[-30:-10].mean()
+            if recent < older - 0.05:
+                v, note = "on", f"Reel getiri geriliyor (%{recent:.2f}) — altın için fırsat maliyeti azalıyor."
+            elif recent > older + 0.05:
+                v, note = "off", f"Reel getiri yükseliyor (%{recent:.2f}) — altın için fırsat maliyeti artıyor."
             else:
-                v, note = "neutral", f"10Y getiri yatay seyrediyor (~{recent/10:.2f}%)."
+                v, note = "neutral", f"Reel getiri yatay seyrediyor (~%{recent:.2f})."
         except Exception:
-            v, note = "neutral", "Getiri verisi şu an alınamadı."
-        agents.append({"name": "ABD 10Y Tahvil Getirisi", "verdict": v, "note": note})
+            v, note = "neutral", "Reel getiri (TIPS) verisi şu an alınamadı."
+        agents.append({"name": "ABD 10Y Reel Getiri (TIPS)", "verdict": v, "note": note})
+
+        # Jeopolitik Risk Endeksi (Caldara & Iacoviello GPR)
+        try:
+            gpr = pd.read_excel("https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls")
+            gpr.columns = [str(c).strip() for c in gpr.columns]
+            value_col = "GPRD" if "GPRD" in gpr.columns else gpr.columns[1]
+            gpr[value_col] = pd.to_numeric(gpr[value_col], errors="coerce")
+            gpr = gpr.dropna(subset=[value_col])
+            recent = gpr[value_col].iloc[-5:].mean()
+            baseline = gpr[value_col].iloc[-90:].mean()
+            if recent > baseline * 1.2:
+                v, note = "on", f"GPR endeksi ortalamanın belirgin üstünde ({recent:.0f}) — jeopolitik gerginlik yüksek, güvenli liman talebi artabilir."
+            elif recent < baseline * 0.8:
+                v, note = "neutral", f"GPR endeksi ortalamanın altında ({recent:.0f}) — jeopolitik gerginlik düşük."
+            else:
+                v, note = "neutral", f"GPR endeksi normal aralıkta (~{recent:.0f})."
+        except Exception:
+            v, note = "neutral", "Jeopolitik risk (GPR) verisi şu an alınamadı — kaynak formatı değişmiş olabilir."
+        agents.append({"name": "Jeopolitik Risk Endeksi (GPR)", "verdict": v, "note": note})
 
         # Enflasyon (FRED CPI, anahtar gerektirmez)
         try:
