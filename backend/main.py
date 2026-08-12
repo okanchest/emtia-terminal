@@ -222,33 +222,34 @@ def macro_agents():
             v, note = "neutral", "Reel getiri (TIPS) verisi şu an alınamadı."
         agents.append({"name": "ABD 10Y Reel Getiri (TIPS)", "verdict": v, "note": note})
 
-        # Faiz İndirim Beklentisi (2Y getiri vs Fed Funds — piyasanın
-        # fiyatladığı faiz patikasının basit ama güvenilir bir proxy'si)
+        # Faiz İndirim Olasılığı (CME 30-Günlük Fed Funds Vadeli İşlemleri)
+        # Not: Bu, gerçek vadeli işlem fiyatından ima edilen faiz patikasını
+        # kullanır (FedWatch'ın mantığına yakın), ama FOMC toplantı tarihine
+        # göre gün-ağırlıklandırma yapmıyor — basitleştirilmiş bir yaklaşım.
         try:
-            fed_funds = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF")
-            fed_funds.columns = ["date", "value"]
-            fed_funds["value"] = pd.to_numeric(fed_funds["value"], errors="coerce")
-            fed_funds = fed_funds.dropna()
-            current_ff = fed_funds["value"].iloc[-1]
+            zq = yf.Ticker("ZQ=F").history(period="5d")
+            futures_price = float(zq["Close"].iloc[-1])
+            implied_rate = 100 - futures_price
 
-            dgs2 = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2")
-            dgs2.columns = ["date", "value"]
-            dgs2["value"] = pd.to_numeric(dgs2["value"], errors="coerce")
-            dgs2 = dgs2.dropna()
-            current_2y = dgs2["value"].iloc[-1]
+            fed_funds2 = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF")
+            fed_funds2.columns = ["date", "value"]
+            fed_funds2["value"] = pd.to_numeric(fed_funds2["value"], errors="coerce")
+            fed_funds2 = fed_funds2.dropna()
+            current_ff2 = fed_funds2["value"].iloc[-1]
 
-            spread = current_2y - current_ff  # negatif = piyasa indirim fiyatlıyor
-            if spread < -0.30:
-                v, note = "on", f"2Y getiri Fed faizinin {abs(spread):.2f} puan altında — piyasa belirgin faiz indirimi fiyatlıyor, değerli metaller için destekleyici."
-            elif spread < -0.10:
-                v, note = "neutral", f"2Y getiri Fed faizinin {abs(spread):.2f} puan altında — hafif indirim beklentisi var."
-            elif spread > 0.10:
-                v, note = "off", f"2Y getiri Fed faizinin {spread:.2f} puan üstünde — piyasa faiz artışı ya da 'daha uzun süre yüksek' senaryosu fiyatlıyor."
+            implied_change_bps = (implied_rate - current_ff2) * 100
+
+            if implied_change_bps <= -20:
+                v, note = "on", f"Vadeli işlemler yaklaşık tam bir 25bp indirimi fiyatlıyor ({implied_change_bps:.0f} baz puan) — altın için destekleyici bir arka plan."
+            elif implied_change_bps <= -5:
+                v, note = "on", f"Vadeli işlemler kısmi bir faiz indirimi fiyatlıyor ({implied_change_bps:.0f} baz puan)."
+            elif implied_change_bps >= 5:
+                v, note = "off", f"Vadeli işlemler faiz artışı ya da 'daha uzun süre yüksek' senaryosu fiyatlıyor (+{implied_change_bps:.0f} baz puan)."
             else:
-                v, note = "neutral", f"2Y getiri Fed faizine yakın (%{current_2y:.2f} vs %{current_ff:.2f}) — net bir beklenti yok."
+                v, note = "neutral", f"Vadeli işlemler önemli bir faiz değişikliği fiyatlamıyor ({implied_change_bps:.0f} baz puan)."
         except Exception:
-            v, note = "neutral", "Faiz beklentisi verisi şu an alınamadı."
-        agents.append({"name": "Faiz İndirim Beklentisi (Fed vs 2Y)", "verdict": v, "note": note})
+            v, note = "neutral", "Fed funds vadeli işlem verisi şu an alınamadı — ZQ kontrat sembolü kaynakta değişmiş olabilir."
+        agents.append({"name": "Faiz İndirim Olasılığı (Fed Funds Futures)", "verdict": v, "note": note})
 
         # Jeopolitik Risk Endeksi (Caldara & Iacoviello GPR)
         try:
