@@ -24,6 +24,7 @@ import yfinance as yf
 import pandas as pd
 import requests
 import time
+from datetime import datetime
 
 app = FastAPI(title="Emtia Intelligence API")
 
@@ -221,6 +222,34 @@ def macro_agents():
             v, note = "neutral", "Reel getiri (TIPS) verisi şu an alınamadı."
         agents.append({"name": "ABD 10Y Reel Getiri (TIPS)", "verdict": v, "note": note})
 
+        # Faiz İndirim Beklentisi (2Y getiri vs Fed Funds — piyasanın
+        # fiyatladığı faiz patikasının basit ama güvenilir bir proxy'si)
+        try:
+            fed_funds = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF")
+            fed_funds.columns = ["date", "value"]
+            fed_funds["value"] = pd.to_numeric(fed_funds["value"], errors="coerce")
+            fed_funds = fed_funds.dropna()
+            current_ff = fed_funds["value"].iloc[-1]
+
+            dgs2 = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2")
+            dgs2.columns = ["date", "value"]
+            dgs2["value"] = pd.to_numeric(dgs2["value"], errors="coerce")
+            dgs2 = dgs2.dropna()
+            current_2y = dgs2["value"].iloc[-1]
+
+            spread = current_2y - current_ff  # negatif = piyasa indirim fiyatlıyor
+            if spread < -0.30:
+                v, note = "on", f"2Y getiri Fed faizinin {abs(spread):.2f} puan altında — piyasa belirgin faiz indirimi fiyatlıyor, değerli metaller için destekleyici."
+            elif spread < -0.10:
+                v, note = "neutral", f"2Y getiri Fed faizinin {abs(spread):.2f} puan altında — hafif indirim beklentisi var."
+            elif spread > 0.10:
+                v, note = "off", f"2Y getiri Fed faizinin {spread:.2f} puan üstünde — piyasa faiz artışı ya da 'daha uzun süre yüksek' senaryosu fiyatlıyor."
+            else:
+                v, note = "neutral", f"2Y getiri Fed faizine yakın (%{current_2y:.2f} vs %{current_ff:.2f}) — net bir beklenti yok."
+        except Exception:
+            v, note = "neutral", "Faiz beklentisi verisi şu an alınamadı."
+        agents.append({"name": "Faiz İndirim Beklentisi (Fed vs 2Y)", "verdict": v, "note": note})
+
         # Jeopolitik Risk Endeksi (Caldara & Iacoviello GPR)
         try:
             gpr = pd.read_excel("https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls")
@@ -240,9 +269,10 @@ def macro_agents():
             v, note = "neutral", "Jeopolitik risk (GPR) verisi şu an alınamadı — kaynak formatı değişmiş olabilir."
         agents.append({"name": "Jeopolitik Risk Endeksi (GPR)", "verdict": v, "note": note})
 
-        # Enflasyon (FRED CPI, anahtar gerektirmez)
+        # Enflasyon (FRED CPI, anahtar gerektirmez — CPIAUCNS: mevsimsel
+        # düzeltilmemiş, resmi BLS manşet YoY rakamıyla eşleşen seri)
         try:
-            cpi = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL")
+            cpi = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS")
             cpi.columns = ["date", "value"]
             cpi["value"] = pd.to_numeric(cpi["value"], errors="coerce")
             cpi = cpi.dropna()
