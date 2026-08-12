@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import requests
 import time
 from datetime import datetime
@@ -112,6 +113,41 @@ def compute_atr(hist: pd.DataFrame, period=14):
     return tr.rolling(period).mean()
 
 
+def compute_adx(hist: pd.DataFrame, period=14):
+    high, low, close = hist["High"], hist["Low"], hist["Close"]
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=hist.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=hist.index)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low - close.shift(1)).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
+    minus_di = 100 * (minus_dm.rolling(period).mean() / atr)
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    adx = dx.rolling(period).mean()
+    return float(adx.iloc[-1]), float(plus_di.iloc[-1]), float(minus_di.iloc[-1])
+
+
+def compute_bollinger(close: pd.Series, period=20, num_std=2):
+    sma = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    upper = sma + num_std * std
+    lower = sma - num_std * std
+    return float(upper.iloc[-1]), float(lower.iloc[-1]), float(sma.iloc[-1])
+
+
+def compute_stochastic(hist: pd.DataFrame, period=14, smooth=3):
+    low_min = hist["Low"].rolling(period).min()
+    high_max = hist["High"].rolling(period).max()
+    k = 100 * (hist["Close"] - low_min) / (high_max - low_min)
+    d = k.rolling(smooth).mean()
+    return float(k.iloc[-1]), float(d.iloc[-1])
+
+
 def technical_agents(hist: pd.DataFrame):
     close = hist["Close"]
     price = float(close.iloc[-1])
@@ -173,12 +209,45 @@ def technical_agents(hist: pd.DataFrame):
     else:
         sr_v, sr_note = "neutral", f"Fiyat destek ({low20:.2f}) ile direnç ({high20:.2f}) arasında, aralığın ortasında."
 
+    # 6) ADX (Trend Gücü)
+    adx_val, plus_di, minus_di = compute_adx(hist)
+    if adx_val >= 25 and plus_di > minus_di:
+        adx_v, adx_note = "on", f"ADX {adx_val:.0f} — güçlü ve yukarı yönlü bir trend var."
+    elif adx_val >= 25 and minus_di > plus_di:
+        adx_v, adx_note = "off", f"ADX {adx_val:.0f} — güçlü ve aşağı yönlü bir trend var."
+    else:
+        adx_v, adx_note = "neutral", f"ADX {adx_val:.0f} — trend zayıf/yatay, sinyaller güvenilir olmayabilir."
+
+    # 7) Bollinger Bantları
+    bb_upper, bb_lower, bb_mid = compute_bollinger(close)
+    band_width_pct = (bb_upper - bb_lower) / bb_mid * 100
+    if price >= bb_upper:
+        bb_v, bb_note = "off", f"Fiyat üst Bollinger bandına ({bb_upper:.2f}) çok yakın/üstünde — aşırı alım, geri çekilme riski."
+    elif price <= bb_lower:
+        bb_v, bb_note = "on", f"Fiyat alt Bollinger bandına ({bb_lower:.2f}) çok yakın/altında — aşırı satım, tepki potansiyeli."
+    elif band_width_pct < 5:
+        bb_v, bb_note = "neutral", f"Bantlar daralmış (sıkışma, %{band_width_pct:.1f} genişlik) — büyük bir hareket öncesi olabilir."
+    else:
+        bb_v, bb_note = "neutral", f"Fiyat bantlar arasında, normal aralıkta (%{band_width_pct:.1f} genişlik)."
+
+    # 8) Stochastic Osilatör
+    stoch_k, stoch_d = compute_stochastic(hist)
+    if stoch_k >= 80:
+        stoch_v, stoch_note = "off", f"Stochastic %K {stoch_k:.0f} — aşırı alım bölgesinde."
+    elif stoch_k <= 20:
+        stoch_v, stoch_note = "on", f"Stochastic %K {stoch_k:.0f} — aşırı satım bölgesinde."
+    else:
+        stoch_v, stoch_note = "neutral", f"Stochastic %K {stoch_k:.0f} — nötr bölgede."
+
     return [
         {"name": "Trend / Momentum (SMA50/200)", "verdict": trend_v, "note": trend_note},
         {"name": "RSI (14)", "verdict": rsi_v, "note": rsi_note},
         {"name": "Hacim Teyidi", "verdict": vol_v, "note": vol_note},
         {"name": "MACD (12/26/9)", "verdict": macd_v, "note": macd_note},
         {"name": "Destek / Direnç (20G)", "verdict": sr_v, "note": sr_note},
+        {"name": "ADX (Trend Gücü)", "verdict": adx_v, "note": adx_note},
+        {"name": "Bollinger Bantları", "verdict": bb_v, "note": bb_note},
+        {"name": "Stochastic Osilatör", "verdict": stoch_v, "note": stoch_note},
     ], price, float((close.iloc[-1] / close.iloc[-2] - 1) * 100)
 
 
