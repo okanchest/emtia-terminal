@@ -290,6 +290,38 @@ def macro_agents():
             v, note = "neutral", "CPI verisi şu an alınamadı."
         agents.append({"name": "Enflasyon (CPI, YoY)", "verdict": v, "note": note})
 
+        # Altın/Gümüş Oranı (klasik kıymetli metal göreceli değer göstergesi)
+        try:
+            gold_hist = yf.Ticker("GC=F").history(period="5y")
+            silver_hist = yf.Ticker("SI=F").history(period="5y")
+            ratio_df = pd.DataFrame({"gold": gold_hist["Close"], "silver": silver_hist["Close"]}).dropna()
+            ratio_df["ratio"] = ratio_df["gold"] / ratio_df["silver"]
+            current_ratio = float(ratio_df["ratio"].iloc[-1])
+            pct_rank = (ratio_df["ratio"] < current_ratio).mean() * 100
+            if pct_rank >= 80:
+                v, note = "on", f"Altın/Gümüş oranı ({current_ratio:.1f}) 5 yıllık aralığın üst dilimlerinde — gümüş altına göre tarihsel olarak ucuz."
+            elif pct_rank <= 20:
+                v, note = "off", f"Altın/Gümüş oranı ({current_ratio:.1f}) 5 yıllık aralığın alt dilimlerinde — altın gümüşe göre tarihsel olarak ucuz."
+            else:
+                v, note = "neutral", f"Altın/Gümüş oranı ({current_ratio:.1f}) normal aralıkta (~%{pct_rank:.0f}. dilim)."
+        except Exception:
+            v, note = "neutral", "Altın/Gümüş oranı şu an hesaplanamadı."
+        agents.append({"name": "Altın/Gümüş Oranı", "verdict": v, "note": note})
+
+        # VIX (CBOE Piyasa Korku Endeksi — çapraz varlık risk iştahı göstergesi)
+        try:
+            vix = yf.Ticker("^VIX").history(period="1mo")
+            vix_now = float(vix["Close"].iloc[-1])
+            if vix_now >= 22:
+                v, note = "on", f"VIX {vix_now:.1f} — piyasa geneli tedirgin, güvenli liman talebi artabilir."
+            elif vix_now <= 14:
+                v, note = "off", f"VIX {vix_now:.1f} — piyasa sakin/rahat, güvenli liman talebi zayıf."
+            else:
+                v, note = "neutral", f"VIX {vix_now:.1f} — normal aralıkta."
+        except Exception:
+            v, note = "neutral", "VIX verisi şu an alınamadı."
+        agents.append({"name": "VIX (Piyasa Korku Endeksi)", "verdict": v, "note": note})
+
         return agents
     return cached("macro", CACHE_TTL_MACRO, _do)
 
