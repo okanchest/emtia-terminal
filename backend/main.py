@@ -50,7 +50,7 @@ INSTRUMENTS = {
 
 # Basit bellek-içi cache (API'leri gereksiz yormamak için)
 _cache: dict = {}
-CACHE_TTL_PRICE = 5 * 60       # 5 dakika
+CACHE_TTL_PRICE = 8 * 60       # 8 dakika
 CACHE_TTL_MACRO = 60 * 60      # 1 saat
 CACHE_TTL_COT = 12 * 60 * 60   # 12 saat (CFTC verisi haftalık yayınlanır)
 
@@ -59,9 +59,17 @@ def cached(key, ttl, fn):
     now = time.time()
     if key in _cache and now - _cache[key][0] < ttl:
         return _cache[key][1]
-    val = fn()
-    _cache[key] = (now, val)
-    return val
+    try:
+        val = fn()
+        _cache[key] = (now, val)
+        return val
+    except Exception:
+        # Taze veri alınamadı (örn. Yahoo Finance geçici rate limit
+        # uyguluyor) — elimizde eski ama çalışan bir veri varsa onu
+        # döndür, hiç veri yoksa hatayı yukarı fırlat.
+        if key in _cache:
+            return _cache[key][1]
+        raise
 
 
 def verdict_from_score(score):
