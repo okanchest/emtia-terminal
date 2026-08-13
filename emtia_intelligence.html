@@ -96,6 +96,18 @@
   }
   .desk-heading::after{content:""; flex:1; height:1px; background:var(--border-soft);}
 
+  .cot-ratio-bar{margin-bottom:12px;}
+  .cot-ratio-track{
+    height:12px; border-radius:6px; background:var(--off);
+    overflow:hidden; display:flex; border:1px solid var(--border);
+  }
+  .cot-ratio-fill-long{height:100%; background:var(--on); transition:width .4s ease;}
+  .cot-ratio-labels{
+    display:flex; justify-content:space-between; margin-top:6px;
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--muted);
+  }
+  .cot-ratio-labels b{color:var(--text); font-size:12px;}
+
   .agent-cards{display:flex; flex-direction:column; gap:8px;}
   .agent-card{
     background:var(--panel); border:1px solid var(--border);
@@ -139,6 +151,16 @@
   .desk-node .dtag{color:var(--gold); font-weight:600;}
 
   .orchestrator-row{display:flex; justify-content:center; margin-top:70px;}
+
+  .corr-row{display:flex;}
+  .corr-cell{
+    flex:none; width:64px; min-width:64px; height:30px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+    border-radius:3px; margin:1.5px;
+  }
+  .corr-label{width:52px; min-width:52px; justify-content:flex-end; padding-right:6px; color:var(--text); font-weight:600; background:transparent;}
+  .corr-colhead{color:var(--muted); font-weight:600; background:transparent;}
   .orchestrator{
     width:min(560px, 92%);
     background:var(--panel); border:1px solid var(--gold);
@@ -207,6 +229,15 @@
     </div>
     <div class="desk">
       <div class="desk-heading">Pozisyonlama Desk</div>
+      <div class="cot-ratio-bar" id="cotRatioBar">
+        <div class="cot-ratio-track">
+          <div class="cot-ratio-fill-long" id="cotRatioLongFill" style="width:50%;"></div>
+        </div>
+        <div class="cot-ratio-labels">
+          <span>LONG <b id="cotRatioLongPct">—</b></span>
+          <span>SHORT <b id="cotRatioShortPct">—</b></span>
+        </div>
+      </div>
       <div class="agent-cards" id="pozisyonCards"></div>
     </div>
   </div>
@@ -233,6 +264,11 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="section-label" style="margin:16px 24px 0 24px;">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
+  <div class="cot-panel" id="correlationPanel" style="margin:16px 24px 0 24px; overflow-x:auto;">
+    <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
   </div>
 
   <footer>
@@ -441,6 +477,54 @@ async function loadAllTicker(){
   renderTicker();
 }
 
+function correlationCellStyle(value){
+  if(value === null || value === undefined){
+    return `background:var(--panel-2); color:var(--muted);`;
+  }
+  if(value >= 0.999){
+    return `background:var(--panel-2); color:var(--muted);`;
+  }
+  const intensity = Math.min(Math.abs(value), 1);
+  const alpha = (0.12 + intensity * 0.62).toFixed(2);
+  if(value > 0){
+    return `background:rgba(63,201,136,${alpha}); color:${intensity > 0.55 ? '#08150F' : 'var(--text)'};`;
+  }
+  return `background:rgba(229,85,90,${alpha}); color:${intensity > 0.55 ? '#1A0808' : 'var(--text)'};`;
+}
+
+function renderCorrelation(data){
+  const el = document.getElementById('correlationGrid');
+  const labels = data.labels;
+  const matrix = data.matrix;
+
+  let html = `<div class="corr-row"><div class="corr-cell corr-label"></div>`;
+  labels.forEach(l => { html += `<div class="corr-cell corr-colhead">${l}</div>`; });
+  html += `</div>`;
+
+  labels.forEach((rowLabel, i) => {
+    html += `<div class="corr-row"><div class="corr-cell corr-label">${rowLabel}</div>`;
+    matrix[i].forEach(val => {
+      const displayVal = (val === null || val === undefined) ? '—' : val.toFixed(2);
+      html += `<div class="corr-cell" style="${correlationCellStyle(val)}">${displayVal}</div>`;
+    });
+    html += `</div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+async function loadCorrelation(){
+  try{
+    const res = await fetch(`${API_BASE}/api/correlation`, { signal: AbortSignal.timeout(12000) });
+    if(!res.ok) throw new Error('backend hata döndürdü');
+    const data = await res.json();
+    renderCorrelation(data);
+  }catch(e){
+    document.getElementById('correlationGrid').innerHTML =
+      '<span style="color:var(--muted);">Korelasyon verisi şu an alınamadı (backend çalışmıyor olabilir).</span>';
+  }
+}
+
 function agentCardHTML(a){
   return `
   <div class="agent-card">
@@ -478,6 +562,16 @@ function render(){
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
   document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');
   document.getElementById('pozisyonCards').innerHTML = d.pozisyon.map(agentCardHTML).join('');
+
+  if(d.cotRatio && d.cotRatio.long_pct != null){
+    document.getElementById('cotRatioLongFill').style.width = d.cotRatio.long_pct + '%';
+    document.getElementById('cotRatioLongPct').textContent = d.cotRatio.long_pct + '%';
+    document.getElementById('cotRatioShortPct').textContent = d.cotRatio.short_pct + '%';
+  } else {
+    document.getElementById('cotRatioLongFill').style.width = '50%';
+    document.getElementById('cotRatioLongPct').textContent = '—';
+    document.getElementById('cotRatioShortPct').textContent = '—';
+  }
 
   const mv = deskVerdict(d.macro), tv = deskVerdict(d.teknik), pv = deskVerdict(d.pozisyon);
   setTag('macroVerdictTag', mv);
@@ -548,15 +642,18 @@ buildSelector();
 render();          // önce demo veriyle çizer (anında bir şey görünsün diye)
 loadAllTicker();    // sonra ticker'ı canlı fiyatlarla dener
 loadInstrument(currentKey); // ve seçili enstrümanı canlı veriyle dener
+loadCorrelation();  // korelasyon matrisini de yükle
 tickClock();
 setInterval(tickClock, 1000);
 setInterval(()=> loadInstrument(currentKey), 5 * 60 * 1000); // 5 dakikada bir tazele
 setInterval(loadAllTicker, 5 * 60 * 1000);
+setInterval(loadCorrelation, 15 * 60 * 1000); // korelasyon daha az sık değişir
 window.addEventListener('resize', drawConnectors);
 
 document.getElementById('refreshBtn').addEventListener('click', ()=>{
   loadInstrument(currentKey);
   loadAllTicker();
+  loadCorrelation();
 });
 </script>
 </body>

@@ -148,6 +148,29 @@ def compute_stochastic(hist: pd.DataFrame, period=14, smooth=3):
     return float(k.iloc[-1]), float(d.iloc[-1])
 
 
+def fetch_seasonal_history(ticker):
+    def _do():
+        hist = yf.Ticker(ticker).history(period="15y", interval="1mo")
+        if hist.empty:
+            raise HTTPException(502, f"{ticker} için mevsimsel veri alınamadı")
+        return hist
+    return cached(f"seasonal:{ticker}", CACHE_TTL_COT, _do)
+
+
+def compute_seasonality(hist_monthly: pd.DataFrame):
+    df = hist_monthly.copy()
+    df["month"] = df.index.month
+    df["ret"] = df["Close"].pct_change() * 100
+    avg_by_month = df.groupby("month")["ret"].mean()
+    current_month = datetime.now().month
+    current_avg = float(avg_by_month.get(current_month, 0.0))
+    return current_avg, current_month
+
+
+MONTH_NAMES_TR = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                   "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+
+
 def technical_agents(hist: pd.DataFrame):
     close = hist["Close"]
     price = float(close.iloc[-1])
@@ -424,6 +447,13 @@ def positioning_agents(cot_hint: str):
             hist_window = df.tail(156)  # ~3 yıl haftalık
             pct_rank = (hist_window["net_pct_oi"] < latest["net_pct_oi"]).mean() * 100
 
+            # Kurumsal (spekülatif) Long/Short oranı — ham yüzdeler
+            long_total = float(latest["noncomm_positions_long_all"])
+            short_total = float(latest["noncomm_positions_short_all"])
+            total_ls = long_total + short_total
+            long_pct = round(long_total / total_ls * 100, 1) if total_ls else 50.0
+            short_pct = round(100 - long_pct, 1)
+
             if pct_rank >= 80:
                 v1, n1 = "off", f"Net spekülatif pozisyon 3 yıllık aralığın %{pct_rank:.0f}. dilimi — aşırı long, düzeltme riski."
             elif pct_rank <= 20:
@@ -445,18 +475,20 @@ def positioning_agents(cot_hint: str):
             else:
                 v3, n3 = "off", "Açık pozisyon (OI) son bir ayda azalıyor — ilgi zayıflıyor."
 
-            return [
+            agents = [
                 {"name": "COT Net Pozisyon (3Y Percentile)", "verdict": v1, "note": n1},
                 {"name": "COT Haftalık Değişim", "verdict": v2, "note": n2},
                 {"name": "Açık Pozisyon (OI) Trendi", "verdict": v3, "note": n3},
             ]
+            return agents, {"long_pct": long_pct, "short_pct": short_pct}
         except Exception as e:
             note = f"COT verisi alınamadı ({cot_hint}) — CFTC market adı eşleşmemiş olabilir."
-            return [
+            agents = [
                 {"name": "COT Net Pozisyon (3Y Percentile)", "verdict": "neutral", "note": note},
                 {"name": "COT Haftalık Değişim", "verdict": "neutral", "note": "Veri yok."},
                 {"name": "Açık Pozisyon (OI) Trendi", "verdict": "neutral", "note": "Veri yok."},
             ]
+            return agents, {"long_pct": None, "short_pct": None}
     return cached(f"cot:{cot_hint}", CACHE_TTL_COT, _do)
 
 
@@ -474,7 +506,26 @@ def get_instrument(key: str):
     hist = fetch_price_history(cfg["yf"])
     teknik, price, change_pct = technical_agents(hist)
     macro = macro_agents()
-    pozisyon = positioning_agents(cfg["cot_hint"])
+    pozisyon, cot_ratio = positioning_agents(cfg["cot_hint"])
+
+    # Mevsimsellik (15 yıllık aylık ortalama getiri, ayrı bir kaynak
+    # gerektirdiği için hataya dayanıklı şekilde ayrıca ekleniyor)
+    try:
+        seasonal_hist = fetch_seasonal_history(cfg["yf"])
+        seasonal_avg, seasonal_month = compute_seasonality(seasonal_hist)
+        month_name = MONTH_NAMES_TR[seasonal_month]
+        if seasonal_avg > 1:
+            seasonal_v = "on"
+            seasonal_note = f"{month_name} ayı, son 15 yılda ortalama %{seasonal_avg:.1f} pozitif getiri gösteriyor — mevsimsel eğilim yukarı yönlü."
+        elif seasonal_avg < -1:
+            seasonal_v = "off"
+            seasonal_note = f"{month_name} ayı, son 15 yılda ortalama %{abs(seasonal_avg):.1f} negatif getiri gösteriyor — mevsimsel eğilim aşağı yönlü (örn. hasat baskısı olabilir)."
+        else:
+            seasonal_v = "neutral"
+            seasonal_note = f"{month_name} ayı için belirgin bir mevsimsel eğilim yok (~%{seasonal_avg:.1f})."
+    except Exception:
+        seasonal_v, seasonal_note = "neutral", "Mevsimsellik verisi şu an hesaplanamadı."
+    teknik.append({"name": "Mevsimsellik (15Y Ortalama)", "verdict": seasonal_v, "note": seasonal_note})
 
     mv, tv, pv = desk_verdict(macro), desk_verdict(teknik), desk_verdict(pozisyon)
     bias_map = {"on": "RISK-ON", "off": "RISK-OFF", "neutral": "NEUTRAL"}
@@ -492,6 +543,7 @@ def get_instrument(key: str):
         "macro": macro,
         "teknik": teknik,
         "pozisyon": pozisyon,
+        "cotRatio": cot_ratio,
         "bias": {"htf": bias_map[mv], "mtf": bias_map[tv], "ltf": bias_map[pv]},
         "note": note,
     }
@@ -509,3 +561,29 @@ def get_all():
         except Exception:
             out[key] = {"label": cfg["label"], "price": None, "changePct": None}
     return out
+
+
+@app.get("/api/correlation")
+def get_correlation():
+    try:
+        closes = {}
+        for key, cfg in INSTRUMENTS.items():
+            hist = fetch_price_history(cfg["yf"])
+            short_label = cfg["label"].split(" ")[0]
+            closes[short_label] = hist["Close"].tail(90)
+
+        try:
+            dxy_hist = yf.Ticker("DX-Y.NYB").history(period="6mo")
+            closes["DXY"] = dxy_hist["Close"].tail(90)
+        except Exception:
+            pass
+
+        df = pd.DataFrame(closes).dropna()
+        returns = df.pct_change().dropna()
+        corr = returns.corr().round(2)
+
+        labels = list(corr.columns)
+        matrix = [[None if pd.isna(v) else float(v) for v in row] for row in corr.values]
+        return {"labels": labels, "matrix": matrix}
+    except Exception as e:
+        raise HTTPException(502, f"Korelasyon hesaplanamadı: {str(e)}")
