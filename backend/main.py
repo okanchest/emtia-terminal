@@ -497,11 +497,27 @@ def positioning_agents(cot_hint: str):
             else:
                 v4, n4 = "neutral", f"Ticari (hedger) net pozisyon 3 yıllık aralığın %{comm_pct_rank:.0f}. diliminde — aşırılık yok."
 
+            # Klasik "COT Index" (Larry Williams min-max yöntemi) — çoğu
+            # profesyonel COT servisinin kullandığı endüstri standardı
+            # formül, percentile'dan farklı olarak min-max normalizasyonu
+            # kullanır: (şimdiki - min) / (max - min) × 100
+            min_comm = hist_window["comm_net_pct_oi"].min()
+            max_comm = hist_window["comm_net_pct_oi"].max()
+            comm_range = max_comm - min_comm
+            cot_index = ((latest["comm_net_pct_oi"] - min_comm) / comm_range * 100) if comm_range != 0 else 50.0
+            if cot_index >= 80:
+                v5, n5 = "on", f"COT Index (Ticari, min-max) {cot_index:.0f} — ticari taraf 3 yıllık aralığın üst ucunda, güven verici."
+            elif cot_index <= 20:
+                v5, n5 = "off", f"COT Index (Ticari, min-max) {cot_index:.0f} — ticari taraf 3 yıllık aralığın alt ucunda, temkinli sinyal."
+            else:
+                v5, n5 = "neutral", f"COT Index (Ticari, min-max) {cot_index:.0f} — aralığın ortasında, aşırılık yok."
+
             agents = [
                 {"name": "COT Net Pozisyon (3Y Percentile)", "verdict": v1, "note": n1},
                 {"name": "COT Haftalık Değişim", "verdict": v2, "note": n2},
                 {"name": "Açık Pozisyon (OI) Trendi", "verdict": v3, "note": n3},
                 {"name": "Ticari (Commercial) Pozisyon", "verdict": v4, "note": n4},
+                {"name": "COT Index (Min-Max, Klasik)", "verdict": v5, "note": n5},
             ]
             return agents, {"long_pct": long_pct, "short_pct": short_pct}
         except Exception as e:
@@ -511,6 +527,7 @@ def positioning_agents(cot_hint: str):
                 {"name": "COT Haftalık Değişim", "verdict": "neutral", "note": "Veri yok."},
                 {"name": "Açık Pozisyon (OI) Trendi", "verdict": "neutral", "note": "Veri yok."},
                 {"name": "Ticari (Commercial) Pozisyon", "verdict": "neutral", "note": "Veri yok."},
+                {"name": "COT Index (Min-Max, Klasik)", "verdict": "neutral", "note": "Veri yok."},
             ]
             return agents, {"long_pct": None, "short_pct": None}
     return cached(f"cot:{cot_hint}", CACHE_TTL_COT, _do)
