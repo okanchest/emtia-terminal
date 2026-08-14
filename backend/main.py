@@ -446,10 +446,13 @@ def positioning_agents(cot_hint: str):
             df = pd.DataFrame(data)
             df["report_date_as_yyyy_mm_dd"] = pd.to_datetime(df["report_date_as_yyyy_mm_dd"])
             df = df.sort_values("report_date_as_yyyy_mm_dd")
-            for col in ["noncomm_positions_long_all", "noncomm_positions_short_all", "open_interest_all"]:
+            for col in ["noncomm_positions_long_all", "noncomm_positions_short_all",
+                        "comm_positions_long_all", "comm_positions_short_all", "open_interest_all"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             df["net"] = df["noncomm_positions_long_all"] - df["noncomm_positions_short_all"]
             df["net_pct_oi"] = df["net"] / df["open_interest_all"]
+            df["comm_net"] = df["comm_positions_long_all"] - df["comm_positions_short_all"]
+            df["comm_net_pct_oi"] = df["comm_net"] / df["open_interest_all"]
 
             latest = df.iloc[-1]
             hist_window = df.tail(156)  # ~3 yıl haftalık
@@ -483,10 +486,22 @@ def positioning_agents(cot_hint: str):
             else:
                 v3, n3 = "off", "Açık pozisyon (OI) son bir ayda azalıyor — ilgi zayıflıyor."
 
+            # Ticari (Commercial/Hedger) pozisyon — spekülatörlerin genelde
+            # tersi yönde hareket eder, kendi tarihine göre aşırı uçlar
+            # kontraryan bir sinyal sayılır ("akıllı para" yaklaşımı)
+            comm_pct_rank = (hist_window["comm_net_pct_oi"] < latest["comm_net_pct_oi"]).mean() * 100
+            if comm_pct_rank >= 80:
+                v4, n4 = "on", f"Ticari (hedger) net pozisyon 3 yıllık aralığın %{comm_pct_rank:.0f}. dilimi — ticari taraf tarihsel olarak en az short/en çok long, güven verici."
+            elif comm_pct_rank <= 20:
+                v4, n4 = "off", f"Ticari (hedger) net pozisyon 3 yıllık aralığın %{comm_pct_rank:.0f}. dilimi — ticari taraf tarihsel olarak en çok short, temkinli sinyal."
+            else:
+                v4, n4 = "neutral", f"Ticari (hedger) net pozisyon 3 yıllık aralığın %{comm_pct_rank:.0f}. diliminde — aşırılık yok."
+
             agents = [
                 {"name": "COT Net Pozisyon (3Y Percentile)", "verdict": v1, "note": n1},
                 {"name": "COT Haftalık Değişim", "verdict": v2, "note": n2},
                 {"name": "Açık Pozisyon (OI) Trendi", "verdict": v3, "note": n3},
+                {"name": "Ticari (Commercial) Pozisyon", "verdict": v4, "note": n4},
             ]
             return agents, {"long_pct": long_pct, "short_pct": short_pct}
         except Exception as e:
@@ -495,6 +510,7 @@ def positioning_agents(cot_hint: str):
                 {"name": "COT Net Pozisyon (3Y Percentile)", "verdict": "neutral", "note": note},
                 {"name": "COT Haftalık Değişim", "verdict": "neutral", "note": "Veri yok."},
                 {"name": "Açık Pozisyon (OI) Trendi", "verdict": "neutral", "note": "Veri yok."},
+                {"name": "Ticari (Commercial) Pozisyon", "verdict": "neutral", "note": "Veri yok."},
             ]
             return agents, {"long_pct": None, "short_pct": None}
     return cached(f"cot:{cot_hint}", CACHE_TTL_COT, _do)
