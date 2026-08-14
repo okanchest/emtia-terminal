@@ -92,6 +92,63 @@ def fetch_price_history(ticker):
     return cached(f"hist:{ticker}", CACHE_TTL_PRICE, _do)
 
 
+def fetch_4h_history(ticker):
+    def _do():
+        # Yahoo Finance doğrudan 4H mum vermiyor — 1 saatlik veriyi
+        # çekip 4'erli gruplar halinde birleştiriyoruz (resample).
+        hourly = yf.Ticker(ticker).history(period="60d", interval="60m")
+        if hourly.empty:
+            raise HTTPException(502, f"{ticker} için 4H veri alınamadı")
+        h4 = hourly.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min",
+            "Close": "last", "Volume": "sum",
+        }).dropna()
+        if h4.empty:
+            raise HTTPException(502, f"{ticker} için 4H veri hesaplanamadı")
+        return h4
+    return cached(f"4h:{ticker}", CACHE_TTL_PRICE, _do)
+
+
+def compute_4h_reversal(h4: pd.DataFrame):
+    close = h4["Close"]
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, 1e-9)
+    rsi_series = 100 - (100 / (1 + rs))
+
+    ema9 = close.ewm(span=9, adjust=False).mean()
+    ema21 = close.ewm(span=21, adjust=False).mean()
+
+    rsi_now = float(rsi_series.iloc[-1])
+    price_now = float(close.iloc[-1])
+    ema9_now = float(ema9.iloc[-1])
+    ema21_now = float(ema21.iloc[-1])
+
+    # Son 6 barda (yaklaşık son 1 gün) RSI aşırı bölgeye değdi mi diye bak
+    recent_rsi = rsi_series.tail(6)
+    was_overbought = bool((recent_rsi > 70).any())
+    was_oversold = bool((recent_rsi < 30).any())
+
+    if was_overbought and rsi_now < 70 and price_now < ema9_now:
+        v = "off"
+        note = f"4H RSI aşırı alımdan döndü ({rsi_now:.0f}) ve fiyat 4H EMA9'un altına indi — kısa vadeli tepe/dönüş sinyali."
+    elif was_oversold and rsi_now > 30 and price_now > ema9_now:
+        v = "on"
+        note = f"4H RSI aşırı satımdan döndü ({rsi_now:.0f}) ve fiyat 4H EMA9'un üstüne çıktı — kısa vadeli dip/dönüş sinyali."
+    elif ema9_now > ema21_now and price_now > ema9_now:
+        v = "on"
+        note = f"4H trend yukarı yönlü (EMA9>EMA21), henüz dönüş sinyali yok — mevcut yön sürüyor."
+    elif ema9_now < ema21_now and price_now < ema9_now:
+        v = "off"
+        note = f"4H trend aşağı yönlü (EMA9<EMA21), henüz dönüş sinyali yok — mevcut yön sürüyor."
+    else:
+        v = "neutral"
+        note = f"4H RSI {rsi_now:.0f}, net bir dönüş sinyali yok."
+
+    return v, note
+
+
 def compute_rsi(close: pd.Series, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0).rolling(period).mean()
@@ -567,6 +624,15 @@ def get_instrument(key: str):
     except Exception:
         seasonal_v, seasonal_note = "neutral", "Mevsimsellik verisi şu an hesaplanamadı."
     teknik.append({"name": "Mevsimsellik (15Y Ortalama)", "verdict": seasonal_v, "note": seasonal_note})
+
+    # 4H Dönüş (Reversal) Sinyali — ayrı bir veri çekimi (1H veriden
+    # resample) gerektirdiği için hataya dayanıklı şekilde ekleniyor
+    try:
+        h4 = fetch_4h_history(cfg["yf"])
+        reversal_v, reversal_note = compute_4h_reversal(h4)
+    except Exception:
+        reversal_v, reversal_note = "neutral", "4H dönüş verisi şu an alınamadı."
+    teknik.append({"name": "4H Dönüş (Reversal) Sinyali", "verdict": reversal_v, "note": reversal_note})
 
     mv, tv, pv = desk_verdict(macro), desk_verdict(teknik), desk_verdict(pozisyon)
     bias_map = {"on": "RISK-ON", "off": "RISK-OFF", "neutral": "NEUTRAL"}
