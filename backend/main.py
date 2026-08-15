@@ -72,6 +72,15 @@ def cached(key, ttl, fn):
         raise
 
 
+def cache_timestamp(key):
+    """Bu cache anahtarındaki verinin gerçekten ne zaman (unix timestamp)
+    çekildiğini döndürür — kartların 'ne kadar taze' olduğunu göstermek
+    için kullanılır. Hiç cache'lenmemişse None döner."""
+    if key in _cache:
+        return _cache[key][0]
+    return None
+
+
 def verdict_from_score(score):
     if score > 0:
         return "on"
@@ -643,6 +652,21 @@ def get_instrument(key: str):
         "Bu otomatik bir sentezdir, yatırım tavsiyesi değildir."
     )
 
+    # Her desk'in dayandığı verinin gerçekte ne zaman çekildiğini
+    # (saniye cinsinden yaş) hesapla — kartların ne kadar taze olduğunu
+    # frontend'de göstermek için.
+    now = time.time()
+
+    def age_seconds(cache_key):
+        ts = cache_timestamp(cache_key)
+        return round(now - ts) if ts is not None else None
+
+    freshness = {
+        "macro_age_sec": age_seconds("macro"),
+        "teknik_age_sec": age_seconds(f"hist:{cfg['yf']}"),
+        "pozisyon_age_sec": age_seconds(f"cot:{cfg['cot_hint']}"),
+    }
+
     return {
         "label": cfg["label"],
         "price": round(price, 2),
@@ -653,6 +677,7 @@ def get_instrument(key: str):
         "cotRatio": cot_ratio,
         "bias": {"htf": bias_map[mv], "mtf": bias_map[tv], "ltf": bias_map[pv]},
         "note": note,
+        "freshness": freshness,
     }
 
 

@@ -95,6 +95,11 @@
     display:flex; align-items:center; gap:8px;
   }
   .desk-heading::after{content:""; flex:1; height:1px; background:var(--border-soft);}
+  .freshness-tag{
+    text-transform:none; letter-spacing:0; font-size:10px;
+    color:var(--muted); opacity:0.75;
+  }
+  .freshness-tag.stale{color:var(--off); opacity:1;}
 
   .cot-ratio-bar{margin-bottom:12px;}
   .cot-ratio-track{
@@ -171,6 +176,20 @@
     display:flex; align-items:center; gap:8px; margin-bottom:14px;
     font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--gold); letter-spacing:1px;
   }
+  .consensus-bar-wrap{margin-bottom:16px;}
+  .consensus-bar{
+    height:10px; border-radius:5px; overflow:hidden; display:flex;
+    border:1px solid var(--border);
+  }
+  .consensus-seg{height:100%; transition:width .4s ease;}
+  .consensus-seg.on{background:var(--on);}
+  .consensus-seg.neutral{background:var(--neutral);}
+  .consensus-seg.off{background:var(--off);}
+  .consensus-label{
+    margin-top:7px; font-family:'IBM Plex Mono',monospace; font-size:11px;
+    color:var(--muted); text-align:center;
+  }
+  .consensus-label b{color:var(--text); font-weight:600;}
   .oc-bias-row{display:flex; justify-content:space-between; padding:6px 0; font-size:12.5px; border-bottom:1px solid var(--border-soft);}
   .oc-bias-row:last-of-type{border-bottom:none;}
   .oc-bias-row .k{color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:10.5px;}
@@ -220,15 +239,15 @@
 
   <div class="desks-row">
     <div class="desk">
-      <div class="desk-heading">Macro Desk</div>
+      <div class="desk-heading">Macro Desk <span class="freshness-tag" id="macroFreshness"></span></div>
       <div class="agent-cards" id="macroCards"></div>
     </div>
     <div class="desk">
-      <div class="desk-heading">Teknik Desk</div>
+      <div class="desk-heading">Teknik Desk <span class="freshness-tag" id="teknikFreshness"></span></div>
       <div class="agent-cards" id="teknikCards"></div>
     </div>
     <div class="desk">
-      <div class="desk-heading">Pozisyonlama Desk</div>
+      <div class="desk-heading">Pozisyonlama Desk <span class="freshness-tag" id="pozisyonFreshness"></span></div>
       <div class="cot-ratio-bar" id="cotRatioBar">
         <div class="cot-ratio-track">
           <div class="cot-ratio-fill-long" id="cotRatioLongFill" style="width:50%;"></div>
@@ -253,6 +272,14 @@
     <div class="orchestrator-row">
       <div class="orchestrator" id="orchestratorNode">
         <div class="oc-head">◆ ORCHESTRATOR</div>
+        <div class="consensus-bar-wrap">
+          <div class="consensus-bar">
+            <div class="consensus-seg on" id="consensusOnSeg" style="width:0%;"></div>
+            <div class="consensus-seg neutral" id="consensusNeutralSeg" style="width:0%;"></div>
+            <div class="consensus-seg off" id="consensusOffSeg" style="width:0%;"></div>
+          </div>
+          <div class="consensus-label" id="consensusLabel">—</div>
+        </div>
         <div class="oc-bias-row"><span class="k">HTF (Uzun Vade)</span><span class="v" id="biasHTF">—</span></div>
         <div class="oc-bias-row"><span class="k">MTF (Orta Vade)</span><span class="v" id="biasMTF">—</span></div>
         <div class="oc-bias-row"><span class="k">LTF (Kısa Vade)</span><span class="v" id="biasLTF">—</span></div>
@@ -286,6 +313,12 @@
 // dolduran bir backend/script besleyebilirsin.
 // ============================================================
 const API_BASE = "https://emtia-intelligence-api.onrender.com";
+
+// Backend'deki cache sürelerinden biraz fazlası — bunun üstünde bir yaş
+// görürsen (örn. Yahoo Finance rate limit'e takıldıysa) kart "bayat" say.
+const CACHE_STALE_PRICE = 15 * 60;        // 15 dk (backend: 8 dk)
+const CACHE_STALE_MACRO = 90 * 60;        // 90 dk (backend: 60 dk)
+const CACHE_STALE_COT = 14 * 60 * 60;     // 14 sa (backend: 12 sa)
 
 const DEMO_DATA = {
   altin: {
@@ -551,6 +584,60 @@ function renderTicker(){
   }).join('');
 }
 
+function formatAge(sec){
+  if(sec === null || sec === undefined) return '';
+  if(sec < 90) return 'az önce güncellendi';
+  const min = Math.floor(sec / 60);
+  if(min < 60) return `${min} dk önce güncellendi`;
+  const hr = Math.floor(min / 60);
+  if(hr < 24) return `${hr} sa önce güncellendi`;
+  const day = Math.floor(hr / 24);
+  return `${day} gün önce güncellendi`;
+}
+
+function updateFreshness(d){
+  const f = d.freshness;
+  const map = [
+    ['macroFreshness', f ? f.macro_age_sec : null, CACHE_STALE_MACRO],
+    ['teknikFreshness', f ? f.teknik_age_sec : null, CACHE_STALE_PRICE],
+    ['pozisyonFreshness', f ? f.pozisyon_age_sec : null, CACHE_STALE_COT],
+  ];
+  map.forEach(([id, sec, staleAfter]) => {
+    const el = document.getElementById(id);
+    if(sec === null || sec === undefined){
+      el.textContent = '';
+      el.classList.remove('stale');
+      return;
+    }
+    el.textContent = `· ${formatAge(sec)}`;
+    el.classList.toggle('stale', sec > staleAfter);
+  });
+}
+
+function updateConsensus(d){
+  const all = [...d.macro, ...d.teknik, ...d.pozisyon];
+  const total = all.length;
+  const onCount = all.filter(a => a.verdict === 'on').length;
+  const offCount = all.filter(a => a.verdict === 'off').length;
+  const neutralCount = total - onCount - offCount;
+
+  const onPct = total ? (onCount / total * 100) : 0;
+  const neutralPct = total ? (neutralCount / total * 100) : 0;
+  const offPct = total ? (offCount / total * 100) : 0;
+
+  document.getElementById('consensusOnSeg').style.width = onPct + '%';
+  document.getElementById('consensusNeutralSeg').style.width = neutralPct + '%';
+  document.getElementById('consensusOffSeg').style.width = offPct + '%';
+
+  let strengthLabel;
+  if(onCount > offCount && onCount > neutralCount) strengthLabel = 'RISK-ON ağırlıklı';
+  else if(offCount > onCount && offCount > neutralCount) strengthLabel = 'RISK-OFF ağırlıklı';
+  else strengthLabel = 'Kararsız / dengeli';
+
+  document.getElementById('consensusLabel').innerHTML =
+    `<b>${onCount}</b> RISK-ON · <b>${neutralCount}</b> NEUTRAL · <b>${offCount}</b> RISK-OFF — ${strengthLabel} (${total} gösterge)`;
+}
+
 function render(){
   const d = DATA[currentKey];
 
@@ -558,6 +645,8 @@ function render(){
 
   const totalAgents = d.macro.length + d.teknik.length + d.pozisyon.length;
   document.getElementById('ocAgentsCount').textContent = `${totalAgents}/${totalAgents} AGENT`;
+  updateConsensus(d);
+  updateFreshness(d);
 
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
   document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');
