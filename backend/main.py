@@ -158,6 +158,34 @@ def compute_4h_reversal(h4: pd.DataFrame):
     return v, note
 
 
+def compute_weekly_trend(hist: pd.DataFrame):
+    """Günlük veriyi haftalık mumlara çevirip (resample) basit bir
+    haftalık trend teyidi üretir — Haftalık Trade sinyaline gerçek bir
+    fiyat/teknik bileşeni katmak için. Yeni bir API çağrısı gerektirmez,
+    zaten çekilen günlük veriden hesaplanır."""
+    weekly = hist["Close"].resample("W").last().dropna()
+    if len(weekly) < 9:
+        return "neutral", "Haftalık trend için yeterli geçmiş veri yok."
+
+    sma4w = weekly.rolling(4).mean()
+    sma8w = weekly.rolling(8).mean()
+    price_now = float(weekly.iloc[-1])
+    sma4w_now = float(sma4w.iloc[-1])
+    sma8w_now = float(sma8w.iloc[-1])
+    recent_change = float((weekly.iloc[-1] / weekly.iloc[-5] - 1) * 100) if len(weekly) >= 5 else 0.0
+
+    if price_now > sma4w_now > sma8w_now:
+        v = "on"
+        note = f"Haftalık mumlar yukarı yönlü diziliyor (4 ve 8 haftalık ortalamanın üstünde), son 4 haftada %{recent_change:+.1f}."
+    elif price_now < sma4w_now < sma8w_now:
+        v = "off"
+        note = f"Haftalık mumlar aşağı yönlü diziliyor (4 ve 8 haftalık ortalamanın altında), son 4 haftada %{recent_change:+.1f}."
+    else:
+        v = "neutral"
+        note = f"Haftalık trend karışık/net değil, son 4 haftada %{recent_change:+.1f}."
+    return v, note
+
+
 def compute_rsi(close: pd.Series, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0).rolling(period).mean()
@@ -604,6 +632,64 @@ def desk_verdict(agents):
     return verdict_from_score(score)
 
 
+def compute_trade_signals(macro, teknik, pozisyon):
+    """Day trade ve haftalık trade için mekanik, şeffaf bir AL/SAT/BEKLE
+    sinyali üretir. Bu bir backtest edilmiş strateji DEĞİLDİR — sadece
+    zaten var olan göstergeleri belirli ağırlıklarla toplayan basit bir
+    kural setidir. Yatırım tavsiyesi değildir."""
+
+    def score(agents):
+        return sum(1 if a["verdict"] == "on" else -1 if a["verdict"] == "off" else 0 for a in agents)
+
+    # --- Day Trade: SADECE gerçekten 4H bazlı 3 gösterge ---
+    # (Mevsimsellik, SMA50/200, 20G Destek/Direnç gibi günlük/aylık
+    # göstergeler day-trade skorunu sulandırmasın diye dahil edilmiyor.)
+    h4_names = ["4H RSI", "4H MACD (12/26/9)", "4H Dönüş (Reversal) Sinyali"]
+    h4_agents = [a for a in teknik if a["name"] in h4_names]
+    day_score = score(h4_agents)
+
+    if day_score >= 2:
+        day_signal = "AL"
+    elif day_score <= -2:
+        day_signal = "SAT"
+    else:
+        day_signal = "BEKLE"
+
+    day_note = (
+        f"3 adet 4H göstergesinin (RSI, MACD, Dönüş) toplamı: {day_score:+d}. "
+        f"(Eşik: ≥+2 AL, ≤-2 SAT, arası BEKLE)"
+    )
+
+    # --- Haftalık Trade: Macro + Pozisyonlama + Haftalık Mum Trendi ---
+    macro_score = score(macro)
+    pozisyon_score = score(pozisyon)
+    weekly_trend_agent = next((a for a in teknik if a["name"] == "Haftalık Mum Trendi"), None)
+    weekly_trend_score = 0
+    if weekly_trend_agent:
+        if weekly_trend_agent["verdict"] == "on":
+            weekly_trend_score = 2
+        elif weekly_trend_agent["verdict"] == "off":
+            weekly_trend_score = -2
+    weekly_score = macro_score + pozisyon_score + weekly_trend_score
+
+    if weekly_score >= 5:
+        weekly_signal = "AL"
+    elif weekly_score <= -5:
+        weekly_signal = "SAT"
+    else:
+        weekly_signal = "BEKLE"
+
+    weekly_note = (
+        f"Macro {macro_score:+d}, Pozisyonlama {pozisyon_score:+d}, Haftalık Mum Trendi {weekly_trend_score:+d} "
+        f"→ toplam {weekly_score:+d}. (Eşik: ≥+5 AL, ≤-5 SAT, arası BEKLE)"
+    )
+
+    return {
+        "day": {"signal": day_signal, "score": day_score, "note": day_note},
+        "weekly": {"signal": weekly_signal, "score": weekly_score, "note": weekly_note},
+    }
+
+
 @app.get("/api/instrument/{key}")
 def get_instrument(key: str):
     if key not in INSTRUMENTS:
@@ -634,17 +720,56 @@ def get_instrument(key: str):
         seasonal_v, seasonal_note = "neutral", "Mevsimsellik verisi şu an hesaplanamadı."
     teknik.append({"name": "Mevsimsellik (15Y Ortalama)", "verdict": seasonal_v, "note": seasonal_note})
 
-    # 4H Dönüş (Reversal) Sinyali — ayrı bir veri çekimi (1H veriden
-    # resample) gerektirdiği için hataya dayanıklı şekilde ekleniyor
+    # Haftalık Mum Trendi — zaten çekilen günlük veriden (hist) resample
+    # edilir, yeni bir API çağrısı gerekmez. Haftalık Trade sinyaline
+    # gerçek bir fiyat/teknik teyidi katmak için eklendi.
+    try:
+        weekly_trend_v, weekly_trend_note = compute_weekly_trend(hist)
+    except Exception:
+        weekly_trend_v, weekly_trend_note = "neutral", "Haftalık trend hesaplanamadı."
+    teknik.append({"name": "Haftalık Mum Trendi", "verdict": weekly_trend_v, "note": weekly_trend_note})
+
+    # 4H göstergeleri (RSI, MACD, Dönüş sinyali) — ayrı bir veri çekimi
+    # (1H veriden resample) gerektirdiği için hataya dayanıklı şekilde
+    # ekleniyor. Bu üçü, Day Trade sinyalinin TEK dayanağı olacak
+    # şekilde ayrı kartlara çıkarıldı (günlük/aylık göstergeler
+    # day-trade skorunu sulandırmasın diye).
     try:
         h4 = fetch_4h_history(cfg["yf"])
         reversal_v, reversal_note = compute_4h_reversal(h4)
+
+        h4_rsi_val = compute_rsi(h4["Close"])
+        if h4_rsi_val >= 70:
+            h4_rsi_v, h4_rsi_note = "off", f"4H RSI {h4_rsi_val:.0f} — aşırı alım bölgesinde."
+        elif h4_rsi_val <= 30:
+            h4_rsi_v, h4_rsi_note = "on", f"4H RSI {h4_rsi_val:.0f} — aşırı satım bölgesinde."
+        else:
+            h4_rsi_v, h4_rsi_note = "neutral", f"4H RSI {h4_rsi_val:.0f} — nötr bölgede."
+
+        h4_macd_now, h4_macd_prev = compute_macd(h4["Close"])
+        if h4_macd_now > 0 and h4_macd_prev <= 0:
+            h4_macd_v, h4_macd_note = "on", "4H MACD sinyal çizgisini yukarı kesti — kısa vadeli momentum pozitife dönüyor."
+        elif h4_macd_now < 0 and h4_macd_prev >= 0:
+            h4_macd_v, h4_macd_note = "off", "4H MACD sinyal çizgisini aşağı kesti — kısa vadeli momentum negatife dönüyor."
+        elif h4_macd_now > 0:
+            h4_macd_v, h4_macd_note = "on", "4H MACD pozitif bölgede."
+        elif h4_macd_now < 0:
+            h4_macd_v, h4_macd_note = "off", "4H MACD negatif bölgede."
+        else:
+            h4_macd_v, h4_macd_note = "neutral", "4H MACD sıfıra yakın."
     except Exception:
         reversal_v, reversal_note = "neutral", "4H dönüş verisi şu an alınamadı."
+        h4_rsi_v, h4_rsi_note = "neutral", "4H RSI verisi şu an alınamadı."
+        h4_macd_v, h4_macd_note = "neutral", "4H MACD verisi şu an alınamadı."
+
+    teknik.append({"name": "4H RSI", "verdict": h4_rsi_v, "note": h4_rsi_note})
+    teknik.append({"name": "4H MACD (12/26/9)", "verdict": h4_macd_v, "note": h4_macd_note})
     teknik.append({"name": "4H Dönüş (Reversal) Sinyali", "verdict": reversal_v, "note": reversal_note})
 
     mv, tv, pv = desk_verdict(macro), desk_verdict(teknik), desk_verdict(pozisyon)
     bias_map = {"on": "RISK-ON", "off": "RISK-OFF", "neutral": "NEUTRAL"}
+
+    trade_signals = compute_trade_signals(macro, teknik, pozisyon)
 
     note = (
         f"Macro desk {bias_map[mv]}, Teknik desk {bias_map[tv]}, "
@@ -678,6 +803,7 @@ def get_instrument(key: str):
         "bias": {"htf": bias_map[mv], "mtf": bias_map[tv], "ltf": bias_map[pv]},
         "note": note,
         "freshness": freshness,
+        "tradeSignals": trade_signals,
     }
 
 
