@@ -887,6 +887,42 @@ def desk_verdict(agents):
     return verdict_from_score(score)
 
 
+def compute_risk_reward(price, signal, levels):
+    """AL/SAT sinyali için basit bir Risk/Ödül (R:R) oranı hesaplar —
+    mevcut destek/direnç ve (varsa) Supertrend seviyelerinden. BEKLE
+    için hesaplanmaz, çünkü yönlü bir trade önerilmiyor; R:R göstermek
+    yanlış bir 'işte fırsat' izlenimi verir."""
+    if not levels or signal not in ("AL", "SAT"):
+        return None
+    resistance = levels.get("resistance")
+    support = levels.get("support")
+    supertrend = levels.get("supertrend")
+    if resistance is None or support is None:
+        return None
+
+    if signal == "AL":
+        stop = supertrend if (supertrend is not None and supertrend < price) else support
+        target = resistance
+        risk = price - stop
+        reward = target - price
+    else:  # SAT
+        stop = supertrend if (supertrend is not None and supertrend > price) else resistance
+        target = support
+        risk = stop - price
+        reward = price - target
+
+    if risk is None or risk <= 0 or reward is None or reward <= 0:
+        return None
+
+    return {
+        "stop": round(stop, 2),
+        "target": round(target, 2),
+        "risk": round(risk, 2),
+        "reward": round(reward, 2),
+        "ratio": round(reward / risk, 2),
+    }
+
+
 def compute_trade_signals(macro, teknik, pozisyon):
     """Day trade ve haftalık trade için mekanik, şeffaf bir AL/SAT/BEKLE
     sinyali üretir. Bu bir backtest edilmiş strateji DEĞİLDİR — sadece
@@ -1197,8 +1233,11 @@ def get_instrument(key: str):
 
     trade_signals = compute_trade_signals(macro, teknik, pozisyon)
     trade_signals["scalp"]["levels"] = scalp_levels
+    trade_signals["scalp"]["riskReward"] = compute_risk_reward(price, trade_signals["scalp"]["signal"], scalp_levels)
     trade_signals["day"]["levels"] = day_levels
+    trade_signals["day"]["riskReward"] = compute_risk_reward(price, trade_signals["day"]["signal"], day_levels)
     trade_signals["weekly"]["levels"] = weekly_levels
+    trade_signals["weekly"]["riskReward"] = compute_risk_reward(price, trade_signals["weekly"]["signal"], weekly_levels)
 
     note = (
         f"Macro desk {bias_map[mv]}, Teknik desk {bias_map[tv]}, "
