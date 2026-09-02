@@ -1000,7 +1000,7 @@ render();          // önce demo veriyle çizer (anında bir şey görünsün di
 loadAllTicker();    // sonra ticker'ı canlı fiyatlarla dener
 loadInstrument(currentKey); // ve seçili enstrümanı canlı veriyle dener
 loadCorrelation();  // korelasyon matrisini de yükle
-loadHeatmap();      // ısı haritasını da yükle
+setTimeout(loadHeatmap, 3000); // ısı haritasını 3sn geciktir, sayfa ilk açılışındaki diğer isteklerle çakışmasın
 tickClock();
 setInterval(tickClock, 1000);
 setInterval(()=> loadInstrument(currentKey), 5 * 60 * 1000); // 5 dakikada bir tazele

@@ -1321,7 +1321,11 @@ def get_heatmap():
                 "bias": None,
             }
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    # Render'in ucretsiz plani sinirli CPU/RAM veriyor — 6 thread'i
+    # birden acmak, sayfa ilk acilirken diger isteklerle (fiyat,
+    # korelasyon vb.) cakisirsa sunucuyu asiri yukleyebilir. 3'e
+    # dusuruyoruz — hala paralel ama daha hafif.
+    with ThreadPoolExecutor(max_workers=3) as executor:
         results = list(executor.map(fetch_one, INSTRUMENTS.keys()))
 
     return sanitize_json(results)
