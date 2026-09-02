@@ -85,6 +85,9 @@
 
   .signal-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:8px;}
   @media(max-width:640px){ .signal-row{grid-template-columns:1fr;} }
+  .signal-row-3{grid-template-columns:1fr 1fr 1fr;}
+  @media(max-width:900px){ .signal-row-3{grid-template-columns:1fr 1fr;} }
+  @media(max-width:640px){ .signal-row-3{grid-template-columns:1fr;} }
 
   .peak-dip-banner{
     display:flex; align-items:center; gap:12px;
@@ -302,7 +305,13 @@
     </span>
   </div>
 
-  <div class="signal-row">
+  <div class="signal-row signal-row-3">
+    <div class="signal-card" id="scalpSignalCard">
+      <div class="signal-label">SCALP SİNYALİ</div>
+      <div class="signal-value" id="scalpSignalValue">—</div>
+      <div class="signal-levels" id="scalpSignalLevels"></div>
+      <div class="signal-note" id="scalpSignalNote">—</div>
+    </div>
     <div class="signal-card" id="daySignalCard">
       <div class="signal-label">DAY TRADE SİNYALİ</div>
       <div class="signal-value" id="daySignalValue">—</div>
@@ -695,6 +704,7 @@ function updatePeakDipAlert(d){
 function updateTradeSignals(d){
   const ts = d.tradeSignals;
   if(!ts){
+    document.getElementById('scalpSignalValue').textContent = '—';
     document.getElementById('daySignalValue').textContent = '—';
     document.getElementById('weeklySignalValue').textContent = '—';
     return;
@@ -709,6 +719,14 @@ function updateTradeSignals(d){
     }
     return html;
   };
+
+  if(ts.scalp){
+    const scalpEl = document.getElementById('scalpSignalValue');
+    scalpEl.textContent = ts.scalp.signal;
+    scalpEl.className = 'signal-value ' + classFor(ts.scalp.signal);
+    document.getElementById('scalpSignalLevels').innerHTML = renderLevels(ts.scalp.levels);
+    document.getElementById('scalpSignalNote').textContent = ts.scalp.note;
+  }
 
   const dayEl = document.getElementById('daySignalValue');
   dayEl.textContent = ts.day.signal;

@@ -117,13 +117,21 @@ def fetch_price_history(ticker):
     return cached(f"hist:{ticker}", CACHE_TTL_PRICE, _do)
 
 
+def fetch_1h_history(ticker):
+    def _do():
+        hourly = yf.Ticker(ticker).history(period="60d", interval="60m")
+        if hourly.empty:
+            raise HTTPException(502, f"{ticker} için 1H veri alınamadı")
+        return hourly
+    return cached(f"1h:{ticker}", CACHE_TTL_PRICE, _do)
+
+
 def fetch_4h_history(ticker):
     def _do():
         # Yahoo Finance doğrudan 4H mum vermiyor — 1 saatlik veriyi
-        # çekip 4'erli gruplar halinde birleştiriyoruz (resample).
-        hourly = yf.Ticker(ticker).history(period="60d", interval="60m")
-        if hourly.empty:
-            raise HTTPException(502, f"{ticker} için 4H veri alınamadı")
+        # (zaten cache'lenmiş, Scalp sinyaliyle paylaşılan) çekip 4'erli
+        # gruplar halinde birleştiriyoruz (resample).
+        hourly = fetch_1h_history(ticker)
         h4 = hourly.resample("4h").agg({
             "Open": "first", "High": "max", "Low": "min",
             "Close": "last", "Volume": "sum",
@@ -132,6 +140,50 @@ def fetch_4h_history(ticker):
             raise HTTPException(502, f"{ticker} için 4H veri hesaplanamadı")
         return h4
     return cached(f"4h:{ticker}", CACHE_TTL_PRICE, _do)
+
+
+def compute_scalp_signals(hourly: pd.DataFrame):
+    """1 saatlik ham veriden 3 hızlı gösterge üretir — Scalp sinyalinin
+    TEK dayanağı. Day Trade'in (4H) daha da kısa vadeli bir versiyonu."""
+    close = hourly["Close"]
+
+    rsi_val = compute_rsi(close)
+    if rsi_val >= 70:
+        rsi_v, rsi_note = "off", f"1H RSI {rsi_val:.0f} — aşırı alım bölgesinde."
+    elif rsi_val <= 30:
+        rsi_v, rsi_note = "on", f"1H RSI {rsi_val:.0f} — aşırı satım bölgesinde."
+    else:
+        rsi_v, rsi_note = "neutral", f"1H RSI {rsi_val:.0f} — nötr bölgede."
+
+    macd_now, macd_prev = compute_macd(close)
+    if macd_now > 0 and macd_prev <= 0:
+        macd_v, macd_note = "on", "1H MACD sinyal çizgisini yukarı kesti."
+    elif macd_now < 0 and macd_prev >= 0:
+        macd_v, macd_note = "off", "1H MACD sinyal çizgisini aşağı kesti."
+    elif macd_now > 0:
+        macd_v, macd_note = "on", "1H MACD pozitif bölgede."
+    elif macd_now < 0:
+        macd_v, macd_note = "off", "1H MACD negatif bölgede."
+    else:
+        macd_v, macd_note = "neutral", "1H MACD sıfıra yakın."
+
+    ema5 = close.ewm(span=5, adjust=False).mean()
+    ema13 = close.ewm(span=13, adjust=False).mean()
+    price_now = float(close.iloc[-1])
+    ema5_now = float(ema5.iloc[-1])
+    ema13_now = float(ema13.iloc[-1])
+    if ema5_now > ema13_now and price_now > ema5_now:
+        ema_v, ema_note = "on", "1H EMA5, EMA13'ün üstünde ve fiyat EMA5'in üstünde — kısa vadeli momentum yukarı."
+    elif ema5_now < ema13_now and price_now < ema5_now:
+        ema_v, ema_note = "off", "1H EMA5, EMA13'ün altında ve fiyat EMA5'in altında — kısa vadeli momentum aşağı."
+    else:
+        ema_v, ema_note = "neutral", "1H EMA5/EMA13 net bir yön vermiyor."
+
+    return [
+        {"name": "1H RSI", "verdict": rsi_v, "note": rsi_note},
+        {"name": "1H MACD (12/26/9)", "verdict": macd_v, "note": macd_note},
+        {"name": "1H EMA5/13 Kesişimi", "verdict": ema_v, "note": ema_note},
+    ]
 
 
 def compute_4h_reversal(h4: pd.DataFrame):
@@ -786,6 +838,24 @@ def compute_trade_signals(macro, teknik, pozisyon):
     def score(agents):
         return sum(1 if a["verdict"] == "on" else -1 if a["verdict"] == "off" else 0 for a in agents)
 
+    # --- Scalp: SADECE gerçekten 1H bazlı 3 gösterge — Day Trade'den
+    # (4H) daha kısa vadeli. ---
+    scalp_names = ["1H RSI", "1H MACD (12/26/9)", "1H EMA5/13 Kesişimi"]
+    scalp_agents = [a for a in teknik if a["name"] in scalp_names]
+    scalp_score = score(scalp_agents)
+
+    if scalp_score >= 2:
+        scalp_signal = "AL"
+    elif scalp_score <= -2:
+        scalp_signal = "SAT"
+    else:
+        scalp_signal = "BEKLE"
+
+    scalp_note = (
+        f"3 adet 1H göstergesinin (RSI, MACD, EMA5/13) toplamı: {scalp_score:+d}. "
+        f"(Eşik: ≥+2 AL, ≤-2 SAT, arası BEKLE)"
+    )
+
     # --- Day Trade: SADECE gerçekten 4H bazlı 3 gösterge ---
     # (Mevsimsellik, SMA50/200, 20G Destek/Direnç gibi günlük/aylık
     # göstergeler day-trade skorunu sulandırmasın diye dahil edilmiyor.)
@@ -833,6 +903,7 @@ def compute_trade_signals(macro, teknik, pozisyon):
     )
 
     return {
+        "scalp": {"signal": scalp_signal, "score": scalp_score, "note": scalp_note},
         "day": {"signal": day_signal, "score": day_score, "note": day_note},
         "weekly": {"signal": weekly_signal, "score": weekly_score, "note": weekly_note},
     }
@@ -930,6 +1001,21 @@ def get_instrument(key: str):
         peak_dip_type = "DIP"
         peak_dip_note = ". ".join(dip_reasons) + "."
 
+    # Scalp göstergeleri (1H RSI, MACD, EMA kesişimi) — Day Trade'in
+    # (4H) daha kısa vadeli versiyonu. 4H verisiyle aynı ham 1H veriyi
+    # paylaşır, ekstra bir API çağrısı gerektirmez.
+    try:
+        hourly = fetch_1h_history(cfg["yf"])
+        scalp_cards = compute_scalp_signals(hourly)
+    except Exception:
+        scalp_cards = [
+            {"name": "1H RSI", "verdict": "neutral", "note": "1H verisi şu an alınamadı."},
+            {"name": "1H MACD (12/26/9)", "verdict": "neutral", "note": "1H verisi şu an alınamadı."},
+            {"name": "1H EMA5/13 Kesişimi", "verdict": "neutral", "note": "1H verisi şu an alınamadı."},
+        ]
+        hourly = None
+    teknik.extend(scalp_cards)
+
     # 4H göstergeleri (RSI, MACD, Dönüş sinyali) — ayrı bir veri çekimi
     # (1H veriden resample) gerektirdiği için hataya dayanıklı şekilde
     # ekleniyor. Bu üçü, Day Trade sinyalinin TEK dayanağı olacak
@@ -1003,9 +1089,20 @@ def get_instrument(key: str):
     teknik.append({"name": "4H ADX (Trend Gücü)", "verdict": h4_adx_v, "note": h4_adx_note})
     teknik.append({"name": "4H VWAP", "verdict": vwap_v, "note": vwap_note})
 
-    # Day Trade için 4H bazlı, Haftalık Trade için haftalık bazlı
+    # Scalp (1H) için, Day Trade (4H) için ve Haftalık Trade için
     # destek/direnç seviyeleri — sinyal kutularına somut fiyat referansı
     # eklemek için.
+    scalp_levels = None
+    if hourly is not None and len(hourly) >= 10:
+        try:
+            recent_1h = hourly.tail(24)  # ~son 1 gün (24 saat)
+            scalp_levels = {
+                "resistance": round(float(recent_1h["High"].max()), 2),
+                "support": round(float(recent_1h["Low"].min()), 2),
+            }
+        except Exception:
+            scalp_levels = None
+
     day_levels = None
     if h4 is not None and len(h4) >= 10:
         try:
@@ -1033,6 +1130,7 @@ def get_instrument(key: str):
     bias_map = {"on": "RISK-ON", "off": "RISK-OFF", "neutral": "NEUTRAL"}
 
     trade_signals = compute_trade_signals(macro, teknik, pozisyon)
+    trade_signals["scalp"]["levels"] = scalp_levels
     trade_signals["day"]["levels"] = day_levels
     trade_signals["weekly"]["levels"] = weekly_levels
 
