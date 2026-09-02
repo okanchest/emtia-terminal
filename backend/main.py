@@ -211,6 +211,16 @@ def compute_rsi(close: pd.Series, period=14):
     return float(rsi.iloc[-1])
 
 
+def compute_weekly_rsi(hist: pd.DataFrame, period=14):
+    """Günlük veriyi haftalık mumlara çevirip RSI hesaplar — çoklu zaman
+    dilimi (günlük + haftalık) RSI teyidi için. Yeterli veri yoksa None
+    döner."""
+    weekly_close = hist["Close"].resample("W").last().dropna()
+    if len(weekly_close) < period + 1:
+        return None
+    return compute_rsi(weekly_close, period)
+
+
 def compute_macd(close: pd.Series, fast=12, slow=26, signal=9):
     ema_fast = close.ewm(span=fast, adjust=False).mean()
     ema_slow = close.ewm(span=slow, adjust=False).mean()
@@ -809,6 +819,44 @@ def get_instrument(key: str):
         weekly_trend_v, weekly_trend_note = "neutral", "Haftalık trend hesaplanamadı."
     teknik.append({"name": "Haftalık Mum Trendi", "verdict": weekly_trend_v, "note": weekly_trend_note})
 
+    # Çoklu Zaman Dilimi RSI Uyarısı (TEPE/DİP) — günlük VE haftalık RSI
+    # aynı anda aşırı uçta olduğunda, tek zaman diliminin yanılabildiği
+    # durumlara karşı ekstra güçlü bir uyarı üretir. Bu, normal
+    # AL/SAT/BEKLE puanlamasının DIŞINDA, bağımsız bir alarm bayrağıdır.
+    peak_dip_type = None
+    peak_dip_note = None
+    try:
+        daily_rsi_val = compute_rsi(hist["Close"])
+        weekly_rsi_val = compute_weekly_rsi(hist)
+
+        if weekly_rsi_val is not None:
+            if daily_rsi_val > 85 and weekly_rsi_val > 85:
+                peak_dip_type = "TEPE"
+                peak_dip_note = (
+                    f"Günlük RSI ({daily_rsi_val:.0f}) VE Haftalık RSI ({weekly_rsi_val:.0f}) "
+                    f"aynı anda 85'in üstünde — çoklu zaman dilimi aşırı alım, majör tepe riski."
+                )
+                mtf_v = "off"
+            elif daily_rsi_val < 15 and weekly_rsi_val < 15:
+                peak_dip_type = "DIP"
+                peak_dip_note = (
+                    f"Günlük RSI ({daily_rsi_val:.0f}) VE Haftalık RSI ({weekly_rsi_val:.0f}) "
+                    f"aynı anda 15'in altında — çoklu zaman dilimi aşırı satım, majör dip riski."
+                )
+                mtf_v = "on"
+            else:
+                mtf_v = "neutral"
+                mtf_note = f"Günlük RSI {daily_rsi_val:.0f}, Haftalık RSI {weekly_rsi_val:.0f} — uyarı eşiği aşılmadı."
+        else:
+            mtf_v = "neutral"
+            mtf_note = "Haftalık RSI için yeterli veri yok."
+    except Exception:
+        mtf_v = "neutral"
+        mtf_note = "Çoklu zaman dilimi RSI verisi şu an hesaplanamadı."
+
+    mtf_note = peak_dip_note if peak_dip_note else mtf_note
+    teknik.append({"name": "Çoklu Zaman Dilimi RSI Uyarısı", "verdict": mtf_v, "note": mtf_note})
+
     # 4H göstergeleri (RSI, MACD, Dönüş sinyali) — ayrı bir veri çekimi
     # (1H veriden resample) gerektirdiği için hataya dayanıklı şekilde
     # ekleniyor. Bu üçü, Day Trade sinyalinin TEK dayanağı olacak
@@ -948,6 +996,7 @@ def get_instrument(key: str):
         "note": note,
         "freshness": freshness,
         "tradeSignals": trade_signals,
+        "peakDipAlert": {"type": peak_dip_type, "note": peak_dip_note},
     })
 
 

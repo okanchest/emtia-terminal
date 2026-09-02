@@ -85,6 +85,32 @@
 
   .signal-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:8px;}
   @media(max-width:640px){ .signal-row{grid-template-columns:1fr;} }
+
+  .peak-dip-banner{
+    display:flex; align-items:center; gap:12px;
+    padding:14px 18px; border-radius:10px; margin-bottom:16px;
+    animation: pd-pulse 1.6s ease-in-out infinite;
+  }
+  .peak-dip-banner.tepe{
+    background:rgba(229,85,90,0.14); border:1px solid var(--off);
+  }
+  .peak-dip-banner.dip{
+    background:rgba(63,201,136,0.14); border:1px solid var(--on);
+  }
+  .peak-dip-banner .pd-icon{font-size:22px; flex:none;}
+  .peak-dip-banner.tepe .pd-icon{color:var(--off);}
+  .peak-dip-banner.dip .pd-icon{color:var(--on);}
+  .peak-dip-banner .pd-text{font-size:12.5px; line-height:1.5;}
+  .peak-dip-banner .pd-text b{
+    font-family:'IBM Plex Mono',monospace; letter-spacing:1px;
+    display:block; margin-bottom:2px; font-size:13px;
+  }
+  .peak-dip-banner.tepe .pd-text b{color:var(--off);}
+  .peak-dip-banner.dip .pd-text b{color:var(--on);}
+  @keyframes pd-pulse{
+    0%, 100% { opacity:1; }
+    50% { opacity:0.72; }
+  }
   .signal-card{
     background:var(--panel); border:1px solid var(--border); border-radius:10px;
     padding:16px 18px; text-align:center;
@@ -267,6 +293,14 @@
 <div class="ticker-strip" id="tickerStrip"></div>
 
 <div class="wrap">
+
+  <div class="peak-dip-banner" id="peakDipBanner" style="display:none;">
+    <span class="pd-icon" id="peakDipIcon">▲</span>
+    <span class="pd-text">
+      <b id="peakDipTitle">TEPE UYARISI</b>
+      <span id="peakDipNote"></span>
+    </span>
+  </div>
 
   <div class="signal-row">
     <div class="signal-card" id="daySignalCard">
@@ -644,6 +678,20 @@ function formatAge(sec){
   return `${day} gün önce güncellendi`;
 }
 
+function updatePeakDipAlert(d){
+  const alert = d.peakDipAlert;
+  const banner = document.getElementById('peakDipBanner');
+  if(!alert || !alert.type){
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'flex';
+  banner.className = 'peak-dip-banner ' + (alert.type === 'TEPE' ? 'tepe' : 'dip');
+  document.getElementById('peakDipIcon').textContent = alert.type === 'TEPE' ? '▲' : '▼';
+  document.getElementById('peakDipTitle').textContent = alert.type === 'TEPE' ? 'TEPE UYARISI' : 'DİP UYARISI';
+  document.getElementById('peakDipNote').textContent = alert.note || '';
+}
+
 function updateTradeSignals(d){
   const ts = d.tradeSignals;
   if(!ts){
@@ -728,6 +776,7 @@ function render(){
   updateConsensus(d);
   updateFreshness(d);
   updateTradeSignals(d);
+  updatePeakDipAlert(d);
 
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
   document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');
