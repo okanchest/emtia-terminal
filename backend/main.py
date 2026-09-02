@@ -25,6 +25,7 @@ import pandas as pd
 import numpy as np
 import requests
 import time
+import math
 from datetime import datetime
 
 app = FastAPI(title="Emtia Intelligence API")
@@ -79,6 +80,21 @@ def cache_timestamp(key):
     if key in _cache:
         return _cache[key][0]
     return None
+
+
+def sanitize_json(obj):
+    """Yanıtı JSON'a göndermeden önce temizler — NaN/Infinity gibi
+    JSON-uyumsuz float değerlerini None'a çevirir. Herhangi bir
+    hesaplamada (örn. yetersiz veri, sıfıra bölme) beklenmedik bir NaN
+    sızarsa, API çökmek yerine o alanı sessizce null döndürür."""
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_json(v) for v in obj]
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    return obj
 
 
 def verdict_from_score(score):
@@ -226,10 +242,23 @@ def compute_supertrend(hist: pd.DataFrame, period=10, multiplier=3.0):
     basic_lower = hl2 - multiplier * atr
 
     n = len(hist)
+
+    # ATR ilk `period` barda NaN olur (rolling ortalama dolana kadar).
+    # Hesaplamaya İLK GEÇERLİ noktadan başlıyoruz — 0. index'ten
+    # başlarsak NaN, karşılaştırmalarda hep "False" ürettiği için
+    # sonsuza kadar zincirleme yayılıp tüm seriyi bozuyor (ve JSON'a
+    # NaN sızdırıp API'yi çökertiyor).
+    valid_idx = atr.first_valid_index()
+    if valid_idx is None or n < 2:
+        return None, 1, float(close.iloc[-1]) if n else None
+    start = hist.index.get_loc(valid_idx)
+    if start >= n - 1:
+        return None, 1, float(close.iloc[-1])
+
     final_upper = basic_upper.copy()
     final_lower = basic_lower.copy()
 
-    for i in range(1, n):
+    for i in range(start + 1, n):
         if basic_upper.iloc[i] < final_upper.iloc[i - 1] or close.iloc[i - 1] > final_upper.iloc[i - 1]:
             final_upper.iloc[i] = basic_upper.iloc[i]
         else:
@@ -242,9 +271,9 @@ def compute_supertrend(hist: pd.DataFrame, period=10, multiplier=3.0):
 
     trend = [1] * n
     supertrend_line = [0.0] * n
-    supertrend_line[0] = float(final_lower.iloc[0])
+    supertrend_line[start] = float(final_lower.iloc[start])
 
-    for i in range(1, n):
+    for i in range(start + 1, n):
         if trend[i - 1] == 1:
             if close.iloc[i] < final_lower.iloc[i]:
                 trend[i] = -1
@@ -810,7 +839,9 @@ def get_instrument(key: str):
             h4_macd_v, h4_macd_note = "neutral", "4H MACD sıfıra yakın."
 
         st_level, st_trend, st_price = compute_supertrend(h4)
-        if st_trend == 1:
+        if st_level is None:
+            st_v, st_note = "neutral", "4H Supertrend için henüz yeterli veri yok."
+        elif st_trend == 1:
             st_v = "on"
             st_note = f"4H Supertrend yukarı yönlü — fiyat ({st_price:.2f}) çizginin ({st_level:.2f}) üstünde. Trailing stop: {st_level:.2f}."
         else:
@@ -905,7 +936,7 @@ def get_instrument(key: str):
         "pozisyon_age_sec": age_seconds(f"cot:{cfg['cot_hint']}"),
     }
 
-    return {
+    return sanitize_json({
         "label": cfg["label"],
         "price": round(price, 2),
         "changePct": round(change_pct, 2),
@@ -917,7 +948,7 @@ def get_instrument(key: str):
         "note": note,
         "freshness": freshness,
         "tradeSignals": trade_signals,
-    }
+    })
 
 
 @app.get("/api/all")
@@ -931,7 +962,7 @@ def get_all():
             out[key] = {"label": cfg["label"], "price": round(price, 2), "changePct": round(change_pct, 2)}
         except Exception:
             out[key] = {"label": cfg["label"], "price": None, "changePct": None}
-    return out
+    return sanitize_json(out)
 
 
 @app.get("/api/correlation")
@@ -955,6 +986,6 @@ def get_correlation():
 
         labels = list(corr.columns)
         matrix = [[None if pd.isna(v) else float(v) for v in row] for row in corr.values]
-        return {"labels": labels, "matrix": matrix}
+        return sanitize_json({"labels": labels, "matrix": matrix})
     except Exception as e:
         raise HTTPException(502, f"Korelasyon hesaplanamadı: {str(e)}")
