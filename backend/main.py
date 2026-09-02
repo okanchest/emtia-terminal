@@ -296,6 +296,64 @@ def compute_rsi_series(close: pd.Series, period=14):
     return 100 - (100 / (1 + rs))
 
 
+def compute_liquidity_levels(hist: pd.DataFrame, window=5, lookback=60):
+    """ICT (Inner Circle Trader) konseptine göre likidite seviyeleri:
+    - BSL (Buy-Side Liquidity): en yakın önemli swing high'ın üstü —
+      short pozisyonların stop-loss'larının kümelendiği, fiyatın
+      genelde çekildiği bölge.
+    - SSL (Sell-Side Liquidity): en yakın önemli swing low'un altı —
+      long pozisyonların stop-loss'larının kümelendiği bölge.
+    - Premium/Discount: fiyatın son aralığın üst yarısında (Premium,
+      ICT'ye göre satış için 'pahalı' bölge) mı alt yarısında
+      (Discount, alış için 'ucuz' bölge) mı olduğu."""
+    recent = hist.tail(lookback + window * 2)
+    close, high, low = recent["Close"], recent["High"], recent["Low"]
+    price_now = float(close.iloc[-1])
+
+    highs_idx, lows_idx = find_pivots(close, window)
+
+    bsl_level = None
+    for idx in reversed(highs_idx):
+        level = float(high.iloc[idx])
+        if level > price_now:
+            bsl_level = level
+            break
+    if bsl_level is None and highs_idx:
+        bsl_level = float(high.iloc[highs_idx[-1]])
+
+    ssl_level = None
+    for idx in reversed(lows_idx):
+        level = float(low.iloc[idx])
+        if level < price_now:
+            ssl_level = level
+            break
+    if ssl_level is None and lows_idx:
+        ssl_level = float(low.iloc[lows_idx[-1]])
+
+    range_high = float(high.tail(lookback).max())
+    range_low = float(low.tail(lookback).min())
+    midpoint = (range_high + range_low) / 2
+
+    if price_now > midpoint:
+        zone, v = "Premium", "off"
+        zone_note = "fiyat son aralığın Premium (üst) bölgesinde — ICT'ye göre satış için daha 'pahalı' bir bölge."
+    else:
+        zone, v = "Discount", "on"
+        zone_note = "fiyat son aralığın Discount (alt) bölgesinde — ICT'ye göre alış için daha 'ucuz' bir bölge."
+
+    bsl_txt = f"{bsl_level:.2f}" if bsl_level is not None else "N/A"
+    ssl_txt = f"{ssl_level:.2f}" if ssl_level is not None else "N/A"
+    note = f"BSL {bsl_txt} · SSL {ssl_txt} — {zone_note}"
+
+    levels = {
+        "bsl": round(bsl_level, 2) if bsl_level is not None else None,
+        "ssl": round(ssl_level, 2) if ssl_level is not None else None,
+        "midpoint": round(midpoint, 2),
+        "zone": zone,
+    }
+    return levels, v, note
+
+
 def compute_divergence(hist: pd.DataFrame, lookback=90, window=5):
     """Fiyat ile RSI arasındaki uyuşmazlığı (divergence) tespit eder.
     Negatif uyuşmazlık: fiyat yeni bir zirve yapar ama RSI daha düşük
@@ -987,6 +1045,14 @@ def get_instrument(key: str):
 
     teknik.append({"name": "RSI Uyuşmazlığı (Divergence)", "verdict": div_v, "note": div_note})
 
+    # ICT Likidite Seviyeleri (BSL/SSL/Premium-Discount) — zaten
+    # çekilen günlük veriden hesaplanır, yeni bir API çağrısı gerekmez.
+    try:
+        liquidity_levels, liq_v, liq_note = compute_liquidity_levels(hist)
+    except Exception:
+        liquidity_levels, liq_v, liq_note = None, "neutral", "Likidite seviyeleri şu an hesaplanamadı."
+    teknik.append({"name": "ICT Likidite Seviyeleri (BSL/SSL)", "verdict": liq_v, "note": liq_note})
+
     if bearish_div:
         tepe_reasons.append("Fiyat yeni zirve yaptı ama RSI daha düşük zirve yaptı (negatif uyuşmazlık)")
     if bullish_div:
@@ -1168,6 +1234,7 @@ def get_instrument(key: str):
         "freshness": freshness,
         "tradeSignals": trade_signals,
         "peakDipAlert": {"type": peak_dip_type, "note": peak_dip_note},
+        "liquidityLevels": liquidity_levels,
     })
 
 
