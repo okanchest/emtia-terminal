@@ -215,6 +215,54 @@ def compute_atr(hist: pd.DataFrame, period=14):
     return tr.rolling(period).mean()
 
 
+def compute_supertrend(hist: pd.DataFrame, period=10, multiplier=3.0):
+    """Klasik Supertrend göstergesi (ATR bazlı) — hem trend yönünü teyit
+    eder hem de bir 'trailing stop' referans seviyesi verir. Standart
+    parametreler: period=10, multiplier=3."""
+    high, low, close = hist["High"], hist["Low"], hist["Close"]
+    atr = compute_atr(hist, period)
+    hl2 = (high + low) / 2
+    basic_upper = hl2 + multiplier * atr
+    basic_lower = hl2 - multiplier * atr
+
+    n = len(hist)
+    final_upper = basic_upper.copy()
+    final_lower = basic_lower.copy()
+
+    for i in range(1, n):
+        if basic_upper.iloc[i] < final_upper.iloc[i - 1] or close.iloc[i - 1] > final_upper.iloc[i - 1]:
+            final_upper.iloc[i] = basic_upper.iloc[i]
+        else:
+            final_upper.iloc[i] = final_upper.iloc[i - 1]
+
+        if basic_lower.iloc[i] > final_lower.iloc[i - 1] or close.iloc[i - 1] < final_lower.iloc[i - 1]:
+            final_lower.iloc[i] = basic_lower.iloc[i]
+        else:
+            final_lower.iloc[i] = final_lower.iloc[i - 1]
+
+    trend = [1] * n
+    supertrend_line = [0.0] * n
+    supertrend_line[0] = float(final_lower.iloc[0])
+
+    for i in range(1, n):
+        if trend[i - 1] == 1:
+            if close.iloc[i] < final_lower.iloc[i]:
+                trend[i] = -1
+                supertrend_line[i] = float(final_upper.iloc[i])
+            else:
+                trend[i] = 1
+                supertrend_line[i] = float(final_lower.iloc[i])
+        else:
+            if close.iloc[i] > final_upper.iloc[i]:
+                trend[i] = 1
+                supertrend_line[i] = float(final_lower.iloc[i])
+            else:
+                trend[i] = -1
+                supertrend_line[i] = float(final_upper.iloc[i])
+
+    return supertrend_line[-1], trend[-1], float(close.iloc[-1])
+
+
 def compute_adx(hist: pd.DataFrame, period=14):
     high, low, close = hist["High"], hist["Low"], hist["Close"]
     up_move = high.diff()
@@ -644,20 +692,23 @@ def compute_trade_signals(macro, teknik, pozisyon):
     # --- Day Trade: SADECE gerçekten 4H bazlı 3 gösterge ---
     # (Mevsimsellik, SMA50/200, 20G Destek/Direnç gibi günlük/aylık
     # göstergeler day-trade skorunu sulandırmasın diye dahil edilmiyor.)
-    h4_names = ["4H RSI", "4H MACD (12/26/9)", "4H Dönüş (Reversal) Sinyali"]
+    h4_names = [
+        "4H RSI", "4H MACD (12/26/9)", "4H Dönüş (Reversal) Sinyali",
+        "4H Supertrend", "4H ADX (Trend Gücü)", "4H VWAP",
+    ]
     h4_agents = [a for a in teknik if a["name"] in h4_names]
     day_score = score(h4_agents)
 
-    if day_score >= 2:
+    if day_score >= 4:
         day_signal = "AL"
-    elif day_score <= -2:
+    elif day_score <= -4:
         day_signal = "SAT"
     else:
         day_signal = "BEKLE"
 
     day_note = (
-        f"3 adet 4H göstergesinin (RSI, MACD, Dönüş) toplamı: {day_score:+d}. "
-        f"(Eşik: ≥+2 AL, ≤-2 SAT, arası BEKLE)"
+        f"6 adet 4H göstergesinin (RSI, MACD, Dönüş, Supertrend, ADX, VWAP) toplamı: {day_score:+d}. "
+        f"(Eşik: ≥+4 AL, ≤-4 SAT, arası BEKLE)"
     )
 
     # --- Haftalık Trade: Macro + Pozisyonlama + Haftalık Mum Trendi ---
@@ -757,15 +808,48 @@ def get_instrument(key: str):
             h4_macd_v, h4_macd_note = "off", "4H MACD negatif bölgede."
         else:
             h4_macd_v, h4_macd_note = "neutral", "4H MACD sıfıra yakın."
+
+        st_level, st_trend, st_price = compute_supertrend(h4)
+        if st_trend == 1:
+            st_v = "on"
+            st_note = f"4H Supertrend yukarı yönlü — fiyat ({st_price:.2f}) çizginin ({st_level:.2f}) üstünde. Trailing stop: {st_level:.2f}."
+        else:
+            st_v = "off"
+            st_note = f"4H Supertrend aşağı yönlü — fiyat ({st_price:.2f}) çizginin ({st_level:.2f}) altında. Trailing stop: {st_level:.2f}."
+
+        h4_adx_val, h4_plus_di, h4_minus_di = compute_adx(h4)
+        if h4_adx_val >= 25 and h4_plus_di > h4_minus_di:
+            h4_adx_v, h4_adx_note = "on", f"4H ADX {h4_adx_val:.0f} — güçlü ve yukarı yönlü bir gün içi trend var."
+        elif h4_adx_val >= 25 and h4_minus_di > h4_plus_di:
+            h4_adx_v, h4_adx_note = "off", f"4H ADX {h4_adx_val:.0f} — güçlü ve aşağı yönlü bir gün içi trend var."
+        else:
+            h4_adx_v, h4_adx_note = "neutral", f"4H ADX {h4_adx_val:.0f} — gün içi trend zayıf/yatay, sinyaller güvenilir olmayabilir."
+
+        vwap_window = h4.tail(18)  # ~son 3 gün (4H×6/gün)
+        typical_price = (vwap_window["High"] + vwap_window["Low"] + vwap_window["Close"]) / 3
+        vwap_val = float((typical_price * vwap_window["Volume"]).sum() / vwap_window["Volume"].sum())
+        vwap_price_now = float(vwap_window["Close"].iloc[-1])
+        if vwap_price_now > vwap_val * 1.001:
+            vwap_v, vwap_note = "on", f"Fiyat ({vwap_price_now:.2f}) 3 günlük VWAP'ın ({vwap_val:.2f}) üstünde — alıcılar ortalama maliyetin üzerinde."
+        elif vwap_price_now < vwap_val * 0.999:
+            vwap_v, vwap_note = "off", f"Fiyat ({vwap_price_now:.2f}) 3 günlük VWAP'ın ({vwap_val:.2f}) altında — satıcılar baskın."
+        else:
+            vwap_v, vwap_note = "neutral", f"Fiyat ({vwap_price_now:.2f}) VWAP'a ({vwap_val:.2f}) çok yakın, net bir yön yok."
     except Exception:
         reversal_v, reversal_note = "neutral", "4H dönüş verisi şu an alınamadı."
         h4_rsi_v, h4_rsi_note = "neutral", "4H RSI verisi şu an alınamadı."
         h4_macd_v, h4_macd_note = "neutral", "4H MACD verisi şu an alınamadı."
+        st_v, st_note, st_level = "neutral", "4H Supertrend verisi şu an alınamadı.", None
+        h4_adx_v, h4_adx_note = "neutral", "4H ADX verisi şu an alınamadı."
+        vwap_v, vwap_note = "neutral", "4H VWAP verisi şu an alınamadı."
         h4 = None
 
     teknik.append({"name": "4H RSI", "verdict": h4_rsi_v, "note": h4_rsi_note})
     teknik.append({"name": "4H MACD (12/26/9)", "verdict": h4_macd_v, "note": h4_macd_note})
     teknik.append({"name": "4H Dönüş (Reversal) Sinyali", "verdict": reversal_v, "note": reversal_note})
+    teknik.append({"name": "4H Supertrend", "verdict": st_v, "note": st_note})
+    teknik.append({"name": "4H ADX (Trend Gücü)", "verdict": h4_adx_v, "note": h4_adx_note})
+    teknik.append({"name": "4H VWAP", "verdict": vwap_v, "note": vwap_note})
 
     # Day Trade için 4H bazlı, Haftalık Trade için haftalık bazlı
     # destek/direnç seviyeleri — sinyal kutularına somut fiyat referansı
@@ -778,6 +862,8 @@ def get_instrument(key: str):
                 "resistance": round(float(recent_h4["High"].max()), 2),
                 "support": round(float(recent_h4["Low"].min()), 2),
             }
+            if st_level is not None:
+                day_levels["supertrend"] = round(float(st_level), 2)
         except Exception:
             day_levels = None
 

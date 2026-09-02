@@ -107,6 +107,7 @@
   }
   .signal-levels .lvl-res{color:var(--off);}
   .signal-levels .lvl-sup{color:var(--on);}
+  .signal-levels .lvl-st{color:var(--gold);}
   .signal-levels b{font-weight:600;}
   .signal-disclaimer{
     text-align:center; font-size:10.5px; color:var(--muted);
@@ -654,7 +655,11 @@ function updateTradeSignals(d){
 
   const renderLevels = (levels) => {
     if(!levels) return '';
-    return `<span class="lvl-res">Direnç <b>${levels.resistance}</b></span><span class="lvl-sup">Destek <b>${levels.support}</b></span>`;
+    let html = `<span class="lvl-res">Direnç <b>${levels.resistance}</b></span><span class="lvl-sup">Destek <b>${levels.support}</b></span>`;
+    if(levels.supertrend !== undefined && levels.supertrend !== null){
+      html += `<span class="lvl-st">Supertrend <b>${levels.supertrend}</b></span>`;
+    }
+    return html;
   };
 
   const dayEl = document.getElementById('daySignalValue');
