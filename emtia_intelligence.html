@@ -248,6 +248,38 @@
   }
   .corr-label{width:52px; min-width:52px; justify-content:flex-end; padding-right:6px; color:var(--text); font-weight:600; background:transparent;}
   .corr-colhead{color:var(--muted); font-weight:600; background:transparent;}
+
+  .corr-heatmap-row{
+    display:flex; gap:16px; align-items:flex-start;
+    margin:16px 24px 0 24px; flex-wrap:wrap;
+  }
+  .corr-heatmap-col{flex:1 1 380px; min-width:320px;}
+  .corr-heatmap-col .section-label{margin:0 0 10px 0;}
+  .corr-heatmap-col .cot-panel{margin:0;}
+
+  .heat-row{display:flex; align-items:center; margin-bottom:3px;}
+  .heat-label{
+    width:130px; min-width:130px; font-size:12px; color:var(--text);
+    font-weight:600; padding-right:8px;
+  }
+  .heat-price{
+    width:90px; min-width:90px; font-family:'IBM Plex Mono',monospace;
+    font-size:11px; color:var(--muted); padding-right:8px;
+  }
+  .heat-price .up{color:var(--on);}
+  .heat-price .down{color:var(--off);}
+  .heat-cell{
+    flex:1; height:28px; margin:1.5px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:4px; font-family:'IBM Plex Mono',monospace;
+    font-size:10px; font-weight:700; letter-spacing:0.5px;
+  }
+  .heat-headrow{display:flex; align-items:center; margin-bottom:6px;}
+  .heat-headcell{
+    flex:1; text-align:center; font-size:10px; color:var(--muted);
+    font-family:'IBM Plex Mono',monospace; letter-spacing:1px;
+  }
+
   .orchestrator{
     width:min(560px, 92%);
     background:var(--panel); border:1px solid var(--gold);
@@ -410,9 +442,19 @@
     </div>
   </div>
 
-  <div class="section-label" style="margin:16px 24px 0 24px;">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
-  <div class="cot-panel" id="correlationPanel" style="margin:16px 24px 0 24px; overflow-x:auto;">
-    <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
+  <div class="corr-heatmap-row">
+    <div class="corr-heatmap-col">
+      <div class="section-label">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
+      <div class="cot-panel" id="correlationPanel" style="overflow-x:auto;">
+        <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
+      </div>
+    </div>
+    <div class="corr-heatmap-col">
+      <div class="section-label">Piyasa Genel Görünümü (Isı Haritası)</div>
+      <div class="cot-panel" id="heatmapPanel" style="overflow-x:auto;">
+        <div id="heatmapGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
+      </div>
+    </div>
   </div>
 
   <footer>
@@ -675,6 +717,47 @@ async function loadCorrelation(){
   }
 }
 
+function biasCellStyle(bias){
+  if(bias === 'RISK-ON') return 'background:rgba(63,201,136,0.18); color:var(--on);';
+  if(bias === 'RISK-OFF') return 'background:rgba(229,85,90,0.18); color:var(--off);';
+  return 'background:var(--panel-2); color:var(--muted);';
+}
+
+function renderHeatmap(rows){
+  const el = document.getElementById('heatmapGrid');
+  let html = `<div class="heat-headrow"><div class="heat-label"></div><div class="heat-price"></div>
+    <div class="heat-headcell">MACRO</div><div class="heat-headcell">TEKNİK</div><div class="heat-headcell">POZİSYON</div></div>`;
+
+  rows.forEach(r => {
+    const shortLabel = r.label.split(' ')[0];
+    const priceHtml = r.price != null
+      ? `${r.price}<span class="${r.changePct >= 0 ? 'up' : 'down'}"> ${r.changePct >= 0 ? '▲' : '▼'}%${Math.abs(r.changePct).toFixed(1)}</span>`
+      : '—';
+    const bias = r.bias || {htf:null, mtf:null, ltf:null};
+    html += `<div class="heat-row">
+      <div class="heat-label">${shortLabel}</div>
+      <div class="heat-price">${priceHtml}</div>
+      <div class="heat-cell" style="${biasCellStyle(bias.htf)}">${bias.htf || '—'}</div>
+      <div class="heat-cell" style="${biasCellStyle(bias.mtf)}">${bias.mtf || '—'}</div>
+      <div class="heat-cell" style="${biasCellStyle(bias.ltf)}">${bias.ltf || '—'}</div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+async function loadHeatmap(){
+  try{
+    const res = await fetch(`${API_BASE}/api/heatmap`, { signal: AbortSignal.timeout(20000) });
+    if(!res.ok) throw new Error('backend hata döndürdü');
+    const data = await res.json();
+    renderHeatmap(data);
+  }catch(e){
+    document.getElementById('heatmapGrid').innerHTML =
+      '<span style="color:var(--muted);">Isı haritası verisi şu an alınamadı (backend çalışmıyor olabilir).</span>';
+  }
+}
+
 function agentCardHTML(a){
   return `
   <div class="agent-card">
@@ -917,17 +1000,20 @@ render();          // önce demo veriyle çizer (anında bir şey görünsün di
 loadAllTicker();    // sonra ticker'ı canlı fiyatlarla dener
 loadInstrument(currentKey); // ve seçili enstrümanı canlı veriyle dener
 loadCorrelation();  // korelasyon matrisini de yükle
+loadHeatmap();      // ısı haritasını da yükle
 tickClock();
 setInterval(tickClock, 1000);
 setInterval(()=> loadInstrument(currentKey), 5 * 60 * 1000); // 5 dakikada bir tazele
 setInterval(loadAllTicker, 5 * 60 * 1000);
 setInterval(loadCorrelation, 15 * 60 * 1000); // korelasyon daha az sık değişir
+setInterval(loadHeatmap, 15 * 60 * 1000);     // ısı haritası da öyle
 window.addEventListener('resize', drawConnectors);
 
 document.getElementById('refreshBtn').addEventListener('click', ()=>{
   loadInstrument(currentKey);
   loadAllTicker();
   loadCorrelation();
+  loadHeatmap();
 });
 </script>
 </body>

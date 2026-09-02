@@ -1291,6 +1291,34 @@ def get_all():
     return sanitize_json(out)
 
 
+@app.get("/api/heatmap")
+def get_heatmap():
+    """Her enstrümanın Macro/Teknik/Pozisyon durumunu tek seferde
+    döndürür — get_instrument()'ın zaten yaptığı hesaplamayı (cache
+    sayesinde çoğunlukla tekrar hesaplamadan) yeniden kullanır, ayrı
+    bir hesaplama mantığı kurmaz."""
+    results = []
+    for key, cfg in INSTRUMENTS.items():
+        try:
+            data = get_instrument(key)
+            results.append({
+                "key": key,
+                "label": cfg["label"],
+                "price": data["price"],
+                "changePct": data["changePct"],
+                "bias": data["bias"],
+            })
+        except Exception:
+            results.append({
+                "key": key,
+                "label": cfg["label"],
+                "price": None,
+                "changePct": None,
+                "bias": None,
+            })
+    return sanitize_json(results)
+
+
 @app.get("/api/correlation")
 def get_correlation():
     try:
