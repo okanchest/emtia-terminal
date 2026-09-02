@@ -20,6 +20,7 @@
     --on:#3FC988;
     --off:#E5555A;
     --neutral:#8A7F65;
+    --warn:#E8C547;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100%;}
@@ -117,6 +118,16 @@
   .signal-card{
     background:var(--panel); border:1px solid var(--border); border-radius:10px;
     padding:16px 18px; text-align:center;
+    transition: border-color .3s ease, box-shadow .3s ease;
+  }
+  .signal-card.al{
+    border-color:var(--on); box-shadow:0 0 16px rgba(63,201,136,0.12);
+  }
+  .signal-card.sat{
+    border-color:var(--off); box-shadow:0 0 16px rgba(229,85,90,0.12);
+  }
+  .signal-card.bekle{
+    border-color:var(--warn); box-shadow:0 0 16px rgba(232,197,71,0.10);
   }
   .signal-label{
     font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:1.5px;
@@ -128,7 +139,7 @@
   }
   .signal-value.al{color:var(--on);}
   .signal-value.sat{color:var(--off);}
-  .signal-value.bekle{color:var(--neutral);}
+  .signal-value.bekle{color:var(--warn);}
   .signal-note{font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;}
   .signal-levels{
     display:flex; justify-content:center; gap:18px; margin-bottom:8px;
@@ -726,6 +737,7 @@ function updateTradeSignals(d){
     scalpEl.className = 'signal-value ' + classFor(ts.scalp.signal);
     document.getElementById('scalpSignalLevels').innerHTML = renderLevels(ts.scalp.levels);
     document.getElementById('scalpSignalNote').textContent = ts.scalp.note;
+    document.getElementById('scalpSignalCard').className = 'signal-card ' + classFor(ts.scalp.signal);
   }
 
   const dayEl = document.getElementById('daySignalValue');
@@ -733,12 +745,14 @@ function updateTradeSignals(d){
   dayEl.className = 'signal-value ' + classFor(ts.day.signal);
   document.getElementById('daySignalLevels').innerHTML = renderLevels(ts.day.levels);
   document.getElementById('daySignalNote').textContent = ts.day.note;
+  document.getElementById('daySignalCard').className = 'signal-card ' + classFor(ts.day.signal);
 
   const weeklyEl = document.getElementById('weeklySignalValue');
   weeklyEl.textContent = ts.weekly.signal;
   weeklyEl.className = 'signal-value ' + classFor(ts.weekly.signal);
   document.getElementById('weeklySignalLevels').innerHTML = renderLevels(ts.weekly.levels);
   document.getElementById('weeklySignalNote').textContent = ts.weekly.note;
+  document.getElementById('weeklySignalCard').className = 'signal-card ' + classFor(ts.weekly.signal);
 }
 
 function updateFreshness(d){
