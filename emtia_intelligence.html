@@ -280,6 +280,16 @@
     font-family:'IBM Plex Mono',monospace; letter-spacing:1px;
   }
 
+  .vp-row{display:flex; align-items:center; margin-bottom:2px; gap:8px;}
+  .vp-price{
+    width:82px; min-width:82px; font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px; color:var(--muted); text-align:right;
+  }
+  .vp-price.current{color:var(--gold); font-weight:700;}
+  .vp-bar-track{flex:1; height:15px; background:var(--panel-2); border-radius:3px; overflow:hidden;}
+  .vp-bar-fill{height:100%; border-radius:3px;}
+  .vp-disclaimer{margin-top:12px; font-size:10.5px; color:var(--muted); line-height:1.55;}
+
   .orchestrator{
     width:min(560px, 92%);
     background:var(--panel); border:1px solid var(--gold);
@@ -439,6 +449,14 @@
           <span id="ocClock">00:00:00</span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin:16px 24px 0 24px;">Volume Profile (İşlem Yoğunluğu) — <span id="vpInstrumentLabel">—</span></div>
+  <div class="cot-panel" id="volumeProfilePanel" style="margin:16px 24px 0 24px;">
+    <div id="volumeProfileGrid"></div>
+    <div class="vp-disclaimer">
+      Bu, <b style="color:var(--text)">gerçek işlem hacminin</b> fiyat ekseninde dağılımıdır (Volume Profile) — kaldıraçlı pozisyon/likidasyon verisi <b style="color:var(--text)">değildir</b> (bu veri emtia futures'ında kamuya açık olarak yayınlanmıyor). Yüksek yoğunluklu bölgeler tarihsel olarak güçlü destek/direnç eğilimindedir. ◀ işareti şu anki fiyat bandını gösterir.
     </div>
   </div>
 
@@ -795,6 +813,37 @@ function formatAge(sec){
   return `${day} gün önce güncellendi`;
 }
 
+function volumeHeatColor(intensity){
+  // 0 -> koyu/soğuk, 1 -> parlak sıcak (kırmızı/turuncu) — klasik ısı haritası paleti
+  const r = Math.round(50 + intensity * 200);
+  const g = Math.round(45 + intensity * 90);
+  const b = Math.round(40 + intensity * 20);
+  return `rgb(${r},${g},${b})`;
+}
+
+function renderVolumeProfile(d){
+  document.getElementById('vpInstrumentLabel').textContent = d.label || '—';
+  const el = document.getElementById('volumeProfileGrid');
+  const profile = d.volumeProfile;
+  if(!profile || profile.length === 0){
+    el.innerHTML = '<span style="color:var(--muted); font-size:12px;">Veri yok.</span>';
+    return;
+  }
+  const price = d.price;
+  const rows = [...profile].reverse(); // yüksek fiyat üstte
+  let html = '';
+  rows.forEach(bin => {
+    const mid = (bin.priceLow + bin.priceHigh) / 2;
+    const isCurrentZone = price >= bin.priceLow && price < bin.priceHigh;
+    const widthPct = Math.max(3, bin.intensity * 100);
+    html += `<div class="vp-row">
+      <div class="vp-price${isCurrentZone ? ' current' : ''}">${mid.toFixed(1)}${isCurrentZone ? ' ◀' : ''}</div>
+      <div class="vp-bar-track"><div class="vp-bar-fill" style="width:${widthPct}%; background:${volumeHeatColor(bin.intensity)};"></div></div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
 function updatePeakDipAlert(d){
   const alert = d.peakDipAlert;
   const banner = document.getElementById('peakDipBanner');
@@ -915,6 +964,7 @@ function render(){
   updateFreshness(d);
   updateTradeSignals(d);
   updatePeakDipAlert(d);
+  renderVolumeProfile(d);
 
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
   document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');

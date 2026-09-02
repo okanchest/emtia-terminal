@@ -297,6 +297,41 @@ def compute_rsi_series(close: pd.Series, period=14):
     return 100 - (100 / (1 + rs))
 
 
+def compute_volume_profile(hist: pd.DataFrame, bins=24, lookback=90):
+    """Fiyat seviyelerine göre işlem hacmi dağılımı (Volume Profile) —
+    BTC/kripto borsalarındaki 'likidasyon ısı haritası' ile GÖRSEL
+    olarak benzer ama farklı bir kavram: gerçek likidasyon verisi değil,
+    gerçek işlem hacminin fiyat ekseninde nerede yoğunlaştığını gösterir.
+    Yüksek hacimli bölgeler genelde güçlü destek/direnç olur."""
+    recent = hist.tail(lookback)
+    if recent.empty:
+        return []
+    price_min = float(recent["Low"].min())
+    price_max = float(recent["High"].max())
+    if price_max <= price_min:
+        return []
+
+    bin_size = (price_max - price_min) / bins
+    volume_by_bin = [0.0] * bins
+
+    for _, row in recent.iterrows():
+        typical = (row["High"] + row["Low"] + row["Close"]) / 3
+        idx = int((typical - price_min) / bin_size)
+        idx = max(0, min(idx, bins - 1))
+        volume_by_bin[idx] += float(row["Volume"])
+
+    max_vol = max(volume_by_bin) if volume_by_bin else 0
+    profile = []
+    for i, vol in enumerate(volume_by_bin):
+        profile.append({
+            "priceLow": round(price_min + i * bin_size, 2),
+            "priceHigh": round(price_min + (i + 1) * bin_size, 2),
+            "volume": round(vol, 0),
+            "intensity": round(vol / max_vol, 3) if max_vol else 0,
+        })
+    return profile
+
+
 def compute_liquidity_levels(hist: pd.DataFrame, window=5, lookback=60):
     """ICT (Inner Circle Trader) konseptine göre likidite seviyeleri:
     - BSL (Buy-Side Liquidity): en yakın önemli swing high'ın üstü —
@@ -1090,6 +1125,13 @@ def get_instrument(key: str):
         liquidity_levels, liq_v, liq_note = None, "neutral", "Likidite seviyeleri şu an hesaplanamadı."
     teknik.append({"name": "ICT Likidite Seviyeleri (BSL/SSL)", "verdict": liq_v, "note": liq_note})
 
+    # Volume Profile — Isı Haritası bölümünde fiyat eksenine göre işlem
+    # yoğunluğu göstermek için. Zaten çekilen günlük veriden hesaplanır.
+    try:
+        volume_profile = compute_volume_profile(hist)
+    except Exception:
+        volume_profile = []
+
     if bearish_div:
         tepe_reasons.append("Fiyat yeni zirve yaptı ama RSI daha düşük zirve yaptı (negatif uyuşmazlık)")
     if bullish_div:
@@ -1275,6 +1317,7 @@ def get_instrument(key: str):
         "tradeSignals": trade_signals,
         "peakDipAlert": {"type": peak_dip_type, "note": peak_dip_note},
         "liquidityLevels": liquidity_levels,
+        "volumeProfile": volume_profile,
     })
 
 
