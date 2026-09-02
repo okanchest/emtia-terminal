@@ -26,6 +26,7 @@ import numpy as np
 import requests
 import time
 import math
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 app = FastAPI(title="Emtia Intelligence API")
@@ -1296,26 +1297,33 @@ def get_heatmap():
     """Her enstrümanın Macro/Teknik/Pozisyon durumunu tek seferde
     döndürür — get_instrument()'ın zaten yaptığı hesaplamayı (cache
     sayesinde çoğunlukla tekrar hesaplamadan) yeniden kullanır, ayrı
-    bir hesaplama mantığı kurmaz."""
-    results = []
-    for key, cfg in INSTRUMENTS.items():
+    bir hesaplama mantığı kurmaz. 6 enstrüman AĞ BEKLEMESİ ağırlıklı
+    olduğu için (Yahoo/FRED/CFTC istekleri) paralel çalıştırılır —
+    sırayla çalıştırılsaydı 6 kata kadar daha yavaş olur, tarayıcının
+    zaman aşımına takılırdı."""
+    def fetch_one(key):
+        cfg = INSTRUMENTS[key]
         try:
             data = get_instrument(key)
-            results.append({
+            return {
                 "key": key,
                 "label": cfg["label"],
                 "price": data["price"],
                 "changePct": data["changePct"],
                 "bias": data["bias"],
-            })
+            }
         except Exception:
-            results.append({
+            return {
                 "key": key,
                 "label": cfg["label"],
                 "price": None,
                 "changePct": None,
                 "bias": None,
-            })
+            }
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        results = list(executor.map(fetch_one, INSTRUMENTS.keys()))
+
     return sanitize_json(results)
 
 
