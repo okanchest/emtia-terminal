@@ -221,6 +221,64 @@ def compute_weekly_rsi(hist: pd.DataFrame, period=14):
     return compute_rsi(weekly_close, period)
 
 
+def find_pivots(series: pd.Series, window=5):
+    """Yerel tepe ve dip noktalarının index konumlarını bulur — bir
+    nokta, kendi window bar solundaki ve sağındaki tüm noktalardan
+    yüksekse tepe, düşükse diptir."""
+    highs, lows = [], []
+    n = len(series)
+    for i in range(window, n - window):
+        seg = series.iloc[i - window:i + window + 1]
+        if series.iloc[i] == seg.max():
+            highs.append(i)
+        if series.iloc[i] == seg.min():
+            lows.append(i)
+    return highs, lows
+
+
+def compute_rsi_series(close: pd.Series, period=14):
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, 1e-9)
+    return 100 - (100 / (1 + rs))
+
+
+def compute_divergence(hist: pd.DataFrame, lookback=90, window=5):
+    """Fiyat ile RSI arasındaki uyuşmazlığı (divergence) tespit eder.
+    Negatif uyuşmazlık: fiyat yeni bir zirve yapar ama RSI daha düşük
+    bir zirve yapar (yükseliş gücü tükeniyor, tepe riski).
+    Pozitif uyuşmazlık: fiyat yeni bir dip yapar ama RSI daha yüksek
+    bir dip yapar (düşüş gücü tükeniyor, dip riski)."""
+    recent = hist.tail(lookback + window * 2)
+    close = recent["Close"]
+    rsi_series = compute_rsi_series(close)
+
+    price_highs, price_lows = find_pivots(close, window)
+
+    bearish = False
+    bullish = False
+
+    if len(price_highs) >= 2:
+        i1, i2 = price_highs[-2], price_highs[-1]
+        if close.iloc[i2] > close.iloc[i1] and rsi_series.iloc[i2] < rsi_series.iloc[i1]:
+            bearish = True
+
+    if len(price_lows) >= 2:
+        j1, j2 = price_lows[-2], price_lows[-1]
+        if close.iloc[j2] < close.iloc[j1] and rsi_series.iloc[j2] > rsi_series.iloc[j1]:
+            bullish = True
+
+    if bearish:
+        v, note = "off", "Fiyat yeni bir zirve yaptı ama RSI daha düşük bir zirve yaptı — negatif uyuşmazlık, yükseliş momentumu zayıflıyor."
+    elif bullish:
+        v, note = "on", "Fiyat yeni bir dip yaptı ama RSI daha yüksek bir dip yaptı — pozitif uyuşmazlık, düşüş momentumu zayıflıyor."
+    else:
+        v, note = "neutral", "Şu an belirgin bir fiyat-RSI uyuşmazlığı yok."
+
+    return v, note, bearish, bullish
+
+
 def compute_macd(close: pd.Series, fast=12, slow=26, signal=9):
     ema_fast = close.ewm(span=fast, adjust=False).mean()
     ema_slow = close.ewm(span=slow, adjust=False).mean()
@@ -823,39 +881,54 @@ def get_instrument(key: str):
     # aynı anda aşırı uçta olduğunda, tek zaman diliminin yanılabildiği
     # durumlara karşı ekstra güçlü bir uyarı üretir. Bu, normal
     # AL/SAT/BEKLE puanlamasının DIŞINDA, bağımsız bir alarm bayrağıdır.
-    peak_dip_type = None
-    peak_dip_note = None
+    tepe_reasons = []
+    dip_reasons = []
+
     try:
         daily_rsi_val = compute_rsi(hist["Close"])
         weekly_rsi_val = compute_weekly_rsi(hist)
 
         if weekly_rsi_val is not None:
             if daily_rsi_val > 85 and weekly_rsi_val > 85:
-                peak_dip_type = "TEPE"
-                peak_dip_note = (
-                    f"Günlük RSI ({daily_rsi_val:.0f}) VE Haftalık RSI ({weekly_rsi_val:.0f}) "
-                    f"aynı anda 85'in üstünde — çoklu zaman dilimi aşırı alım, majör tepe riski."
-                )
+                tepe_reasons.append(f"Günlük RSI ({daily_rsi_val:.0f}) ve Haftalık RSI ({weekly_rsi_val:.0f}) aynı anda 85 üstünde")
                 mtf_v = "off"
             elif daily_rsi_val < 15 and weekly_rsi_val < 15:
-                peak_dip_type = "DIP"
-                peak_dip_note = (
-                    f"Günlük RSI ({daily_rsi_val:.0f}) VE Haftalık RSI ({weekly_rsi_val:.0f}) "
-                    f"aynı anda 15'in altında — çoklu zaman dilimi aşırı satım, majör dip riski."
-                )
+                dip_reasons.append(f"Günlük RSI ({daily_rsi_val:.0f}) ve Haftalık RSI ({weekly_rsi_val:.0f}) aynı anda 15 altında")
                 mtf_v = "on"
             else:
                 mtf_v = "neutral"
-                mtf_note = f"Günlük RSI {daily_rsi_val:.0f}, Haftalık RSI {weekly_rsi_val:.0f} — uyarı eşiği aşılmadı."
+            mtf_note = f"Günlük RSI {daily_rsi_val:.0f}, Haftalık RSI {weekly_rsi_val:.0f}."
         else:
-            mtf_v = "neutral"
-            mtf_note = "Haftalık RSI için yeterli veri yok."
+            mtf_v, mtf_note = "neutral", "Haftalık RSI için yeterli veri yok."
     except Exception:
-        mtf_v = "neutral"
-        mtf_note = "Çoklu zaman dilimi RSI verisi şu an hesaplanamadı."
+        mtf_v, mtf_note = "neutral", "Çoklu zaman dilimi RSI verisi şu an hesaplanamadı."
 
-    mtf_note = peak_dip_note if peak_dip_note else mtf_note
     teknik.append({"name": "Çoklu Zaman Dilimi RSI Uyarısı", "verdict": mtf_v, "note": mtf_note})
+
+    # RSI Uyuşmazlığı (Divergence) — mutlak RSI seviyesinden bağımsız,
+    # fiyat ile RSI'ın YÖN olarak birbirini teyit etmediği durumları
+    # yakalar. Erken bir tepe/dip uyarısı olarak TEPE/DİP banner'ına
+    # da katkı sağlar.
+    try:
+        div_v, div_note, bearish_div, bullish_div = compute_divergence(hist)
+    except Exception:
+        div_v, div_note, bearish_div, bullish_div = "neutral", "Uyuşmazlık verisi şu an hesaplanamadı.", False, False
+
+    teknik.append({"name": "RSI Uyuşmazlığı (Divergence)", "verdict": div_v, "note": div_note})
+
+    if bearish_div:
+        tepe_reasons.append("Fiyat yeni zirve yaptı ama RSI daha düşük zirve yaptı (negatif uyuşmazlık)")
+    if bullish_div:
+        dip_reasons.append("Fiyat yeni dip yaptı ama RSI daha yüksek dip yaptı (pozitif uyuşmazlık)")
+
+    peak_dip_type = None
+    peak_dip_note = None
+    if tepe_reasons:
+        peak_dip_type = "TEPE"
+        peak_dip_note = ". ".join(tepe_reasons) + "."
+    elif dip_reasons:
+        peak_dip_type = "DIP"
+        peak_dip_note = ". ".join(dip_reasons) + "."
 
     # 4H göstergeleri (RSI, MACD, Dönüş sinyali) — ayrı bir veri çekimi
     # (1H veriden resample) gerektirdiği için hataya dayanıklı şekilde
