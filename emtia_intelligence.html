@@ -83,6 +83,36 @@
   /* ---------- Desks ---------- */
   .wrap{max-width:1440px; margin:0 auto; padding:22px 22px 40px 22px;}
 
+  .signal-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:8px;}
+  @media(max-width:640px){ .signal-row{grid-template-columns:1fr;} }
+  .signal-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    padding:16px 18px; text-align:center;
+  }
+  .signal-label{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:1.5px;
+    color:var(--muted); margin-bottom:8px;
+  }
+  .signal-value{
+    font-family:'IBM Plex Mono',monospace; font-size:28px; font-weight:700;
+    letter-spacing:1px; margin-bottom:6px;
+  }
+  .signal-value.al{color:var(--on);}
+  .signal-value.sat{color:var(--off);}
+  .signal-value.bekle{color:var(--neutral);}
+  .signal-note{font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;}
+  .signal-levels{
+    display:flex; justify-content:center; gap:18px; margin-bottom:8px;
+    font-family:'IBM Plex Mono',monospace; font-size:12px;
+  }
+  .signal-levels .lvl-res{color:var(--off);}
+  .signal-levels .lvl-sup{color:var(--on);}
+  .signal-levels b{font-weight:600;}
+  .signal-disclaimer{
+    text-align:center; font-size:10.5px; color:var(--muted);
+    padding:8px 16px 20px 16px; line-height:1.5;
+  }
+
   .desks-row{
     display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:8px;
   }
@@ -236,6 +266,24 @@
 <div class="ticker-strip" id="tickerStrip"></div>
 
 <div class="wrap">
+
+  <div class="signal-row">
+    <div class="signal-card" id="daySignalCard">
+      <div class="signal-label">DAY TRADE SİNYALİ</div>
+      <div class="signal-value" id="daySignalValue">—</div>
+      <div class="signal-levels" id="daySignalLevels"></div>
+      <div class="signal-note" id="daySignalNote">—</div>
+    </div>
+    <div class="signal-card" id="weeklySignalCard">
+      <div class="signal-label">HAFTALIK TRADE SİNYALİ</div>
+      <div class="signal-value" id="weeklySignalValue">—</div>
+      <div class="signal-levels" id="weeklySignalLevels"></div>
+      <div class="signal-note" id="weeklySignalNote">—</div>
+    </div>
+  </div>
+  <div class="signal-disclaimer">
+    Bu sinyaller mevcut göstergelerin mekanik bir toplamıdır — backtest edilmiş, kazanma oranı kanıtlanmış bir strateji değildir. Yatırım tavsiyesi değildir, kendi kararını kendin ver.
+  </div>
 
   <div class="desks-row">
     <div class="desk">
@@ -595,6 +643,33 @@ function formatAge(sec){
   return `${day} gün önce güncellendi`;
 }
 
+function updateTradeSignals(d){
+  const ts = d.tradeSignals;
+  if(!ts){
+    document.getElementById('daySignalValue').textContent = '—';
+    document.getElementById('weeklySignalValue').textContent = '—';
+    return;
+  }
+  const classFor = (s) => s === 'AL' ? 'al' : s === 'SAT' ? 'sat' : 'bekle';
+
+  const renderLevels = (levels) => {
+    if(!levels) return '';
+    return `<span class="lvl-res">Direnç <b>${levels.resistance}</b></span><span class="lvl-sup">Destek <b>${levels.support}</b></span>`;
+  };
+
+  const dayEl = document.getElementById('daySignalValue');
+  dayEl.textContent = ts.day.signal;
+  dayEl.className = 'signal-value ' + classFor(ts.day.signal);
+  document.getElementById('daySignalLevels').innerHTML = renderLevels(ts.day.levels);
+  document.getElementById('daySignalNote').textContent = ts.day.note;
+
+  const weeklyEl = document.getElementById('weeklySignalValue');
+  weeklyEl.textContent = ts.weekly.signal;
+  weeklyEl.className = 'signal-value ' + classFor(ts.weekly.signal);
+  document.getElementById('weeklySignalLevels').innerHTML = renderLevels(ts.weekly.levels);
+  document.getElementById('weeklySignalNote').textContent = ts.weekly.note;
+}
+
 function updateFreshness(d){
   const f = d.freshness;
   const map = [
@@ -647,6 +722,7 @@ function render(){
   document.getElementById('ocAgentsCount').textContent = `${totalAgents}/${totalAgents} AGENT`;
   updateConsensus(d);
   updateFreshness(d);
+  updateTradeSignals(d);
 
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
   document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');

@@ -761,15 +761,42 @@ def get_instrument(key: str):
         reversal_v, reversal_note = "neutral", "4H dönüş verisi şu an alınamadı."
         h4_rsi_v, h4_rsi_note = "neutral", "4H RSI verisi şu an alınamadı."
         h4_macd_v, h4_macd_note = "neutral", "4H MACD verisi şu an alınamadı."
+        h4 = None
 
     teknik.append({"name": "4H RSI", "verdict": h4_rsi_v, "note": h4_rsi_note})
     teknik.append({"name": "4H MACD (12/26/9)", "verdict": h4_macd_v, "note": h4_macd_note})
     teknik.append({"name": "4H Dönüş (Reversal) Sinyali", "verdict": reversal_v, "note": reversal_note})
 
+    # Day Trade için 4H bazlı, Haftalık Trade için haftalık bazlı
+    # destek/direnç seviyeleri — sinyal kutularına somut fiyat referansı
+    # eklemek için.
+    day_levels = None
+    if h4 is not None and len(h4) >= 10:
+        try:
+            recent_h4 = h4.tail(30)  # ~son 5 gün (4H×6/gün)
+            day_levels = {
+                "resistance": round(float(recent_h4["High"].max()), 2),
+                "support": round(float(recent_h4["Low"].min()), 2),
+            }
+        except Exception:
+            day_levels = None
+
+    weekly_levels = None
+    try:
+        weekly_ohlc = hist.resample("W").agg({"High": "max", "Low": "min"}).dropna().tail(10)
+        weekly_levels = {
+            "resistance": round(float(weekly_ohlc["High"].max()), 2),
+            "support": round(float(weekly_ohlc["Low"].min()), 2),
+        }
+    except Exception:
+        weekly_levels = None
+
     mv, tv, pv = desk_verdict(macro), desk_verdict(teknik), desk_verdict(pozisyon)
     bias_map = {"on": "RISK-ON", "off": "RISK-OFF", "neutral": "NEUTRAL"}
 
     trade_signals = compute_trade_signals(macro, teknik, pozisyon)
+    trade_signals["day"]["levels"] = day_levels
+    trade_signals["weekly"]["levels"] = weekly_levels
 
     note = (
         f"Macro desk {bias_map[mv]}, Teknik desk {bias_map[tv]}, "
