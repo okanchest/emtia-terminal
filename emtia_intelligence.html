@@ -172,16 +172,22 @@
 
   .desk{ }
   .desk-heading{
-    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:1.6px;
-    color:var(--muted); text-transform:uppercase; margin-bottom:9px;
+    font-family:'IBM Plex Mono',monospace; font-size:14.5px; font-weight:800; letter-spacing:1.6px;
+    color:var(--text); text-transform:uppercase; margin-bottom:12px;
     display:flex; align-items:center; gap:8px;
   }
+  .desk-heading[data-desk]{cursor:pointer; user-select:none;}
   .desk-heading::after{content:""; flex:1; height:1px; background:var(--border-soft);}
+  .desk-chevron{color:var(--gold); font-size:16px; font-weight:700; flex:none; line-height:1;}
   .freshness-tag{
     text-transform:none; letter-spacing:0; font-size:10px;
     color:var(--muted); opacity:0.75;
   }
   .freshness-tag.stale{color:var(--off); opacity:1;}
+  .teknik-desk-note{
+    font-size:10px; color:var(--muted); line-height:1.4;
+    margin:-6px 0 10px 0; font-style:italic;
+  }
 
   .cot-ratio-bar{margin-bottom:12px;}
   .cot-ratio-track{
@@ -229,13 +235,20 @@
     color:var(--gold); text-transform:uppercase; margin:14px 0 7px 0;
     display:flex; align-items:center; gap:6px;
     grid-column:1 / -1;
+    cursor:pointer; user-select:none;
   }
   .teknik-subhead:first-child{margin-top:0;}
   .teknik-subhead::after{content:""; flex:1; height:1px; background:var(--border-soft);}
-  .teknik-subhead .sub-badge{
+  .teknik-subhead .subhead-chevron{color:var(--gold); font-size:15px; font-weight:700; flex:none; line-height:1;}
+  .sub-badge{
     font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700;
-    padding:1px 6px; border-radius:4px;
+    padding:1px 6px; border-radius:4px; flex:none;
   }
+  .sub-badge.on{color:var(--on); background:rgba(63,201,136,0.12); border:1px solid rgba(63,201,136,0.3);}
+  .sub-badge.off{color:var(--off); background:rgba(229,85,90,0.12); border:1px solid rgba(229,85,90,0.3);}
+  .sub-badge.neutral{color:var(--neutral); background:rgba(138,127,101,0.14); border:1px solid var(--border);}
+  .teknik-group-body{display:contents;}
+  .teknik-group-body.collapsed{display:none;}
 
   /* ---------- Graph / Orchestrator ---------- */
   .graph{
@@ -424,15 +437,16 @@
 
   <div class="desks-row">
     <div class="desk">
-      <div class="desk-heading">Macro Desk <span class="freshness-tag" id="macroFreshness"></span></div>
+      <div class="desk-heading" id="macroDeskHeading" data-desk="macro"><span class="desk-chevron">▾</span>Macro Desk <span class="sub-badge" id="macroDeskBadge"></span> <span class="freshness-tag" id="macroFreshness"></span></div>
       <div class="agent-cards" id="macroCards"></div>
     </div>
     <div class="desk">
       <div class="desk-heading">Teknik Desk <span class="freshness-tag" id="teknikFreshness"></span></div>
+      <div class="teknik-desk-note">Bu rozet Günlük+4H+1H'nin genel ortalamasıdır — Scalp/Day Trade sinyal kutularından bağımsız, ayrı hesaplanır.</div>
       <div class="agent-cards grid2" id="teknikCards"></div>
     </div>
     <div class="desk">
-      <div class="desk-heading">Pozisyonlama Desk <span class="freshness-tag" id="pozisyonFreshness"></span></div>
+      <div class="desk-heading" id="pozisyonDeskHeading" data-desk="pozisyon"><span class="desk-chevron">▾</span>Pozisyonlama Desk <span class="sub-badge" id="pozisyonDeskBadge"></span> <span class="freshness-tag" id="pozisyonFreshness"></span></div>
       <div class="cot-ratio-bar" id="cotRatioBar">
         <div class="cot-ratio-track">
           <div class="cot-ratio-fill-long" id="cotRatioLongFill" style="width:50%;"></div>
@@ -450,7 +464,7 @@
     <svg class="connectors" id="connectorSvg"></svg>
     <div class="desk-node-row">
       <div class="desk-node" id="nodeMacro"><span class="dtag">DESK</span> Macro <span id="macroVerdictTag" class="badge neutral">NEUTRAL</span></div>
-      <div class="desk-node" id="nodeTeknik"><span class="dtag">DESK</span> Teknik <span id="teknikVerdictTag" class="badge neutral">NEUTRAL</span></div>
+      <div class="desk-node" id="nodeTeknik" title="Bu rozet Günlük+4H+1H'nin genel ortalamasıdır — Scalp/Day Trade sinyal kutularından bağımsız, ayrı hesaplanır."><span class="dtag">DESK</span> Teknik <span id="teknikVerdictTag" class="badge neutral">NEUTRAL</span></div>
       <div class="desk-node" id="nodePozisyon"><span class="dtag">DESK</span> Pozisyon <span id="pozisyonVerdictTag" class="badge neutral">NEUTRAL</span></div>
     </div>
 
@@ -478,17 +492,22 @@
     </div>
   </div>
 
-  <div class="section-label" style="margin:16px 24px 0 24px;">Volume Profile (İşlem Yoğunluğu) — <span id="vpInstrumentLabel">—</span></div>
-  <div class="cot-panel" id="volumeProfilePanel" style="margin:16px 24px 0 24px;">
-    <div id="volumeProfileGrid"></div>
-    <div class="vp-disclaimer">
-      Bu, <b style="color:var(--text)">gerçek işlem hacminin</b> fiyat ekseninde dağılımıdır (Volume Profile) — kaldıraçlı pozisyon/likidasyon verisi <b style="color:var(--text)">değildir</b> (bu veri emtia futures'ında kamuya açık olarak yayınlanmıyor). Yüksek yoğunluklu bölgeler tarihsel olarak güçlü destek/direnç eğilimindedir. ◀ işareti şu anki fiyat bandını gösterir.
+  <div class="corr-heatmap-row">
+    <div class="corr-heatmap-col">
+      <div class="section-label">Volume Profile (İşlem Yoğunluğu) — <span id="vpInstrumentLabel">—</span></div>
+      <div class="cot-panel" id="volumeProfilePanel">
+        <div id="volumeProfileGrid"></div>
+        <div class="vp-disclaimer">
+          Bu, <b style="color:var(--text)">gerçek işlem hacminin</b> fiyat ekseninde dağılımıdır (Volume Profile) — kaldıraçlı pozisyon/likidasyon verisi <b style="color:var(--text)">değildir</b> (bu veri emtia futures'ında kamuya açık olarak yayınlanmıyor). Yüksek yoğunluklu bölgeler tarihsel olarak güçlü destek/direnç eğilimindedir. ◀ işareti şu anki fiyat bandını gösterir.
+        </div>
+      </div>
     </div>
-  </div>
-
-  <div class="section-label" style="margin:16px 24px 0 24px;">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
-  <div class="cot-panel" id="correlationPanel" style="margin:16px 24px 0 24px; overflow-x:auto;">
-    <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
+    <div class="corr-heatmap-col">
+      <div class="section-label">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
+      <div class="cot-panel" id="correlationPanel" style="overflow-x:auto;">
+        <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
+      </div>
+    </div>
   </div>
 
   <footer>
@@ -795,6 +814,8 @@ function categorizeTeknik(name){
   return 'Günlük';
 }
 
+const teknikCollapsed = { 'Günlük': true, '4H (Day Trade)': true, '1H (Scalp)': true, 'Uyarılar': true };
+
 function renderTeknikGrouped(teknik){
   const order = ['Günlük', '4H (Day Trade)', '1H (Scalp)', 'Uyarılar'];
   const groups = {};
@@ -806,12 +827,49 @@ function renderTeknikGrouped(teknik){
   let html = '';
   order.forEach(cat => {
     if(!groups[cat] || groups[cat].length === 0) return;
-    html += `<div class="teknik-subhead">${cat}</div>`;
+    const groupVerdict = deskVerdict(groups[cat]);
+    const isCollapsed = !!teknikCollapsed[cat];
+    html += `<div class="teknik-subhead" data-cat="${cat}">
+      <span class="subhead-chevron">${isCollapsed ? '▸' : '▾'}</span>${cat}
+      <span class="sub-badge ${groupVerdict}">${VERDICT_LABEL[groupVerdict]}</span>
+    </div>`;
     const extraClass = cat === 'Uyarılar' ? 'warning-card' : '';
-    html += groups[cat].map(a => agentCardHTML(a, extraClass)).join('');
+    html += `<div class="teknik-group-body${isCollapsed ? ' collapsed' : ''}" data-catbody="${cat}">` +
+      groups[cat].map(a => agentCardHTML(a, extraClass)).join('') +
+      `</div>`;
   });
   document.getElementById('teknikCards').innerHTML = html;
 }
+
+document.getElementById('teknikCards').addEventListener('click', (e) => {
+  const subhead = e.target.closest('.teknik-subhead');
+  if(!subhead) return;
+  const cat = subhead.dataset.cat;
+  teknikCollapsed[cat] = !teknikCollapsed[cat];
+  const body = document.querySelector(`.teknik-group-body[data-catbody="${cat}"]`);
+  if(body) body.classList.toggle('collapsed', teknikCollapsed[cat]);
+  const chevron = subhead.querySelector('.subhead-chevron');
+  if(chevron) chevron.textContent = teknikCollapsed[cat] ? '▸' : '▾';
+});
+
+const deskCollapsed = { macro: true, pozisyon: true };
+
+function toggleDesk(deskKey, headingEl, cardsEl){
+  deskCollapsed[deskKey] = !deskCollapsed[deskKey];
+  cardsEl.style.display = deskCollapsed[deskKey] ? 'none' : '';
+  const chevron = headingEl.querySelector('.desk-chevron');
+  if(chevron) chevron.textContent = deskCollapsed[deskKey] ? '▸' : '▾';
+}
+
+document.getElementById('macroDeskHeading').addEventListener('click', function(){
+  toggleDesk('macro', this, document.getElementById('macroCards'));
+});
+
+document.getElementById('pozisyonDeskHeading').addEventListener('click', function(){
+  // Pozisyon'da Long/Short çubuğu her zaman görünür kalsın, sadece kartlar kapansın
+  toggleDesk('pozisyon', this, document.getElementById('pozisyonCards'));
+});
+
 
 function deskVerdict(agents){
   const score = agents.reduce((s,a)=> s + (a.verdict==='on'?1: a.verdict==='off'?-1:0), 0);
@@ -996,6 +1054,16 @@ function render(){
   renderTeknikGrouped(d.teknik);
   document.getElementById('pozisyonCards').innerHTML = d.pozisyon.map(agentCardHTML).join('');
 
+  const macroV = deskVerdict(d.macro);
+  const macroBadge = document.getElementById('macroDeskBadge');
+  macroBadge.textContent = VERDICT_LABEL[macroV];
+  macroBadge.className = 'sub-badge ' + macroV;
+
+  const pozisyonV = deskVerdict(d.pozisyon);
+  const pozisyonBadge = document.getElementById('pozisyonDeskBadge');
+  pozisyonBadge.textContent = VERDICT_LABEL[pozisyonV];
+  pozisyonBadge.className = 'sub-badge ' + pozisyonV;
+
   if(d.cotRatio && d.cotRatio.long_pct != null){
     document.getElementById('cotRatioLongFill').style.width = d.cotRatio.long_pct + '%';
     document.getElementById('cotRatioLongPct').textContent = d.cotRatio.long_pct + '%';
@@ -1071,6 +1139,22 @@ function tickClock(){
   document.getElementById('ocClock').textContent = new Date().toLocaleTimeString('tr-TR');
 }
 
+function applyInitialDeskCollapse(){
+  ['macro', 'pozisyon'].forEach(key => {
+    if(!deskCollapsed[key]) return;
+    const cardsId = key === 'macro' ? 'macroCards' : 'pozisyonCards';
+    const headingId = key === 'macro' ? 'macroDeskHeading' : 'pozisyonDeskHeading';
+    const cardsEl = document.getElementById(cardsId);
+    const headingEl = document.getElementById(headingId);
+    if(cardsEl) cardsEl.style.display = 'none';
+    if(headingEl){
+      const chevron = headingEl.querySelector('.desk-chevron');
+      if(chevron) chevron.textContent = '▸';
+    }
+  });
+}
+
+applyInitialDeskCollapse();
 buildSelector();
 render();          // önce demo veriyle çizer (anında bir şey görünsün diye)
 loadAllTicker();    // sonra ticker'ı canlı fiyatlarla dener
