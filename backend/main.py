@@ -47,7 +47,6 @@ INSTRUMENTS = {
     "platin":   {"label": "Platin (XPT/USD)",   "yf": "PL=F", "cot_hint": "PLATINUM"},
     "paladyum": {"label": "Paladyum (XPD/USD)", "yf": "PA=F", "cot_hint": "PALLADIUM"},
     "bakir":    {"label": "Bakır (HG1!)",       "yf": "HG=F", "cot_hint": "COPPER"},
-    "bugday":   {"label": "Buğday (ZW1!)",      "yf": "ZW=F", "cot_hint": "WHEAT"},
 }
 
 # Basit bellek-içi cache (API'leri gereksiz yormamak için)
@@ -123,6 +122,18 @@ def fetch_1h_history(ticker):
         hourly = yf.Ticker(ticker).history(period="60d", interval="60m")
         if hourly.empty:
             raise HTTPException(502, f"{ticker} için 1H veri alınamadı")
+        # New York (COMEX/CBOT işlem saatleri) referansına hizala — bu,
+        # 4H mumların TradingView gibi platformlarla aynı zaman
+        # sınırlarını kullanmasını sağlar (1H göstergelerin SAYISAL
+        # değerlerini etkilemez, sadece 4H'e gruplarken sınırları
+        # düzeltir).
+        try:
+            if hourly.index.tz is not None:
+                hourly.index = hourly.index.tz_convert("America/New_York")
+            else:
+                hourly.index = hourly.index.tz_localize("UTC").tz_convert("America/New_York")
+        except Exception:
+            pass  # zaman dilimi bilgisi okunamazsa orijinal index ile sessizce devam et
         return hourly
     return cached(f"1h:{ticker}", CACHE_TTL_PRICE, _do)
 
