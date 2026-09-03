@@ -343,6 +343,24 @@ def compute_volume_profile(hist: pd.DataFrame, bins=24, lookback=90):
     return profile
 
 
+def compute_mfi(hist: pd.DataFrame, period=14):
+    """Para Akış Endeksi (Money Flow Index) — RSI'ın hacim ağırlıklı
+    versiyonu. Fiyat + hacim verisinden hesaplanır (COT verisi değil),
+    'para girişi/çıkışı ne kadar güçlü' sorusuna 0-100 arası tek bir
+    sayıyla cevap verir. >80 aşırı para girişi (tükenme riski),
+    <20 aşırı para çıkışı (tepki potansiyeli)."""
+    typical_price = (hist["High"] + hist["Low"] + hist["Close"]) / 3
+    money_flow = typical_price * hist["Volume"]
+    tp_diff = typical_price.diff()
+    positive_flow = money_flow.where(tp_diff > 0, 0.0)
+    negative_flow = money_flow.where(tp_diff < 0, 0.0)
+    positive_sum = positive_flow.rolling(period).sum()
+    negative_sum = negative_flow.rolling(period).sum()
+    mfr = positive_sum / negative_sum.replace(0, 1e-9)
+    mfi = 100 - (100 / (1 + mfr))
+    return float(mfi.iloc[-1])
+
+
 def compute_liquidity_levels(hist: pd.DataFrame, window=5, lookback=60):
     """ICT (Inner Circle Trader) konseptine göre likidite seviyeleri:
     - BSL (Buy-Side Liquidity): en yakın önemli swing high'ın üstü —
@@ -1060,6 +1078,20 @@ def get_instrument(key: str):
     teknik, price, change_pct = technical_agents(hist)
     macro = macro_agents()
     pozisyon, cot_ratio = positioning_agents(cfg["cot_hint"])
+
+    # Para Akış Endeksi (MFI) — hızlı karar için Pozisyonlama Desk'e
+    # eklendi (fiyat+hacimden hesaplanır, COT'tan bağımsız bir kaynak).
+    try:
+        mfi_val = compute_mfi(hist)
+        if mfi_val >= 80:
+            mfi_v, mfi_note = "off", f"MFI {mfi_val:.0f} — para girişi aşırı yüksek, aşırı alım/tükenme riski."
+        elif mfi_val <= 20:
+            mfi_v, mfi_note = "on", f"MFI {mfi_val:.0f} — para çıkışı baskın, aşırı satım/tepki potansiyeli."
+        else:
+            mfi_v, mfi_note = "neutral", f"MFI {mfi_val:.0f} — para akışı normal aralıkta."
+    except Exception:
+        mfi_v, mfi_note = "neutral", "MFI verisi şu an hesaplanamadı."
+    pozisyon.append({"name": "Para Akış Endeksi (MFI)", "verdict": mfi_v, "note": mfi_note})
 
     # Mevsimsellik (15 yıllık aylık ortalama getiri, ayrı bir kaynak
     # gerektirdiği için hataya dayanıklı şekilde ayrıca ekleniyor)
