@@ -166,9 +166,9 @@
   }
 
   .desks-row{
-    display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:8px;
+    display:grid; grid-template-columns:1fr 1.7fr 1fr; gap:16px; margin-bottom:8px;
   }
-  @media(max-width:980px){ .desks-row{grid-template-columns:1fr;} }
+  @media(max-width:1100px){ .desks-row{grid-template-columns:1fr;} }
 
   .desk{ }
   .desk-heading{
@@ -196,25 +196,46 @@
   .cot-ratio-labels b{color:var(--text); font-size:12px;}
 
   .agent-cards{display:flex; flex-direction:column; gap:8px;}
+  .agent-cards.grid2{
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start;
+  }
+  @media(max-width:640px){ .agent-cards.grid2{grid-template-columns:1fr;} }
   .agent-card{
     background:var(--panel); border:1px solid var(--border);
-    border-radius:8px; padding:11px 12px;
+    border-radius:8px; padding:9px 11px;
     position:relative;
   }
   .agent-card .row1{display:flex; align-items:center; justify-content:space-between; gap:8px;}
-  .agent-card .agent-name{font-size:12px; font-weight:600; display:flex; align-items:center; gap:7px;}
+  .agent-card .agent-name{font-size:11.5px; font-weight:600; display:flex; align-items:center; gap:6px;}
   .status-dot{width:6px; height:6px; border-radius:50%; flex:none;}
   .status-dot.on{background:var(--on); box-shadow:0 0 6px var(--on);}
   .status-dot.off{background:var(--off); box-shadow:0 0 6px var(--off);}
   .status-dot.neutral{background:var(--neutral);}
   .badge{
-    font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:0.4px;
-    padding:2px 7px; border-radius:4px;
+    font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:0.4px;
+    padding:2px 6px; border-radius:4px; flex:none;
   }
   .badge.on{color:var(--on); background:rgba(63,201,136,0.12); border:1px solid rgba(63,201,136,0.3);}
   .badge.off{color:var(--off); background:rgba(229,85,90,0.12); border:1px solid rgba(229,85,90,0.3);}
   .badge.neutral{color:var(--neutral); background:rgba(138,127,101,0.14); border:1px solid var(--border);}
-  .agent-note{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
+  .agent-note{font-size:10.5px; color:var(--muted); margin-top:5px; line-height:1.4;}
+  .agent-card.warning-card{
+    border-left:3px solid #A78BFA;
+    background:rgba(167,139,250,0.06);
+  }
+
+  .teknik-subhead{
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1.2px;
+    color:var(--gold); text-transform:uppercase; margin:14px 0 7px 0;
+    display:flex; align-items:center; gap:6px;
+    grid-column:1 / -1;
+  }
+  .teknik-subhead:first-child{margin-top:0;}
+  .teknik-subhead::after{content:""; flex:1; height:1px; background:var(--border-soft);}
+  .teknik-subhead .sub-badge{
+    font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700;
+    padding:1px 6px; border-radius:4px;
+  }
 
   /* ---------- Graph / Orchestrator ---------- */
   .graph{
@@ -361,6 +382,11 @@
 
 <div class="wrap">
 
+  <div class="section-label" style="margin-bottom:10px;">Piyasa Genel Görünümü (Isı Haritası)</div>
+  <div class="cot-panel" id="heatmapPanel" style="overflow-x:auto; margin-bottom:16px;">
+    <div id="heatmapGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
+  </div>
+
   <div class="peak-dip-banner" id="peakDipBanner" style="display:none;">
     <span class="pd-icon" id="peakDipIcon">▲</span>
     <span class="pd-text">
@@ -403,7 +429,7 @@
     </div>
     <div class="desk">
       <div class="desk-heading">Teknik Desk <span class="freshness-tag" id="teknikFreshness"></span></div>
-      <div class="agent-cards" id="teknikCards"></div>
+      <div class="agent-cards grid2" id="teknikCards"></div>
     </div>
     <div class="desk">
       <div class="desk-heading">Pozisyonlama Desk <span class="freshness-tag" id="pozisyonFreshness"></span></div>
@@ -460,19 +486,9 @@
     </div>
   </div>
 
-  <div class="corr-heatmap-row">
-    <div class="corr-heatmap-col">
-      <div class="section-label">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
-      <div class="cot-panel" id="correlationPanel" style="overflow-x:auto;">
-        <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
-      </div>
-    </div>
-    <div class="corr-heatmap-col">
-      <div class="section-label">Piyasa Genel Görünümü (Isı Haritası)</div>
-      <div class="cot-panel" id="heatmapPanel" style="overflow-x:auto;">
-        <div id="heatmapGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
-      </div>
-    </div>
+  <div class="section-label" style="margin:16px 24px 0 24px;">Korelasyon Matrisi (90G, Günlük Getiriler)</div>
+  <div class="cot-panel" id="correlationPanel" style="margin:16px 24px 0 24px; overflow-x:auto;">
+    <div id="correlationGrid" class="mono" style="font-size:12px; color:var(--muted);">Yükleniyor…</div>
   </div>
 
   <footer>
@@ -597,26 +613,6 @@ const DEMO_DATA = {
     ],
     bias:{htf:"RISK-ON", mtf:"RISK-ON", ltf:"NEUTRAL"},
     note:"Arz tarafı endişeleri ve düşük borsa stokları bakırı destekliyor; makro büyüme tarafı henüz net teyit vermiyor."
-  },
-  bugday: {
-    label:"Buğday (ZW1!)", price:"598.25", changePct:1.15,
-    macro:[
-      {name:"USDA WASDE", verdict:"on", note:"Son rapor stok tahminlerini aşağı revize etti."},
-      {name:"Hava Durumu / Rekolte", verdict:"neutral", note:"Bölgesel kuraklık riski izleniyor."},
-      {name:"İhracat / Jeopolitik", verdict:"on", note:"Karadeniz koridorunda belirsizlik sürüyor."},
-    ],
-    teknik:[
-      {name:"Trend / Momentum", verdict:"on", note:"Kısa vadeli yükseliş ivmesi kazandı."},
-      {name:"Volatilite (ATR)", verdict:"off", note:"Mevsimsel olarak yüksek volatilite."},
-      {name:"Hacim Profili", verdict:"neutral", note:"Orta seviyede katılım."},
-    ],
-    pozisyon:[
-      {name:"COT Net Pozisyon", verdict:"neutral", note:"Spekülatif pozisyon nötr bölgede."},
-      {name:"İhracat Satışları", verdict:"on", note:"Haftalık satışlar beklentinin üzerinde."},
-      {name:"Vadeli Eğrisi", verdict:"neutral", note:"Normal aralıkta."},
-    ],
-    bias:{htf:"NEUTRAL", mtf:"RISK-ON", ltf:"RISK-ON"},
-    note:"Arz endişeleri ve güçlü ihracat verisi kısa vadeli yükselişi destekliyor; mevsimsel volatiliteye dikkat."
   },
 };
 
@@ -776,15 +772,45 @@ async function loadHeatmap(){
   }
 }
 
-function agentCardHTML(a){
+function agentCardHTML(a, extraClass){
+  const cls = extraClass ? `agent-card ${extraClass}` : 'agent-card';
   return `
-  <div class="agent-card">
+  <div class="${cls}">
     <div class="row1">
       <div class="agent-name"><span class="status-dot ${a.verdict}"></span>${a.name}</div>
       <span class="badge ${a.verdict}">${VERDICT_LABEL[a.verdict]}</span>
     </div>
     <div class="agent-note">${a.note}</div>
   </div>`;
+}
+
+const TEKNIK_WARNING_NAMES = [
+  "Çoklu Zaman Dilimi RSI Uyarısı", "RSI Uyuşmazlığı (Divergence)", "ICT Likidite Seviyeleri (BSL/SSL)",
+];
+
+function categorizeTeknik(name){
+  if(name.startsWith('4H ')) return '4H (Day Trade)';
+  if(name.startsWith('1H ')) return '1H (Scalp)';
+  if(TEKNIK_WARNING_NAMES.includes(name)) return 'Uyarılar';
+  return 'Günlük';
+}
+
+function renderTeknikGrouped(teknik){
+  const order = ['Günlük', '4H (Day Trade)', '1H (Scalp)', 'Uyarılar'];
+  const groups = {};
+  teknik.forEach(a => {
+    const cat = categorizeTeknik(a.name);
+    if(!groups[cat]) groups[cat] = [];
+    groups[cat].push(a);
+  });
+  let html = '';
+  order.forEach(cat => {
+    if(!groups[cat] || groups[cat].length === 0) return;
+    html += `<div class="teknik-subhead">${cat}</div>`;
+    const extraClass = cat === 'Uyarılar' ? 'warning-card' : '';
+    html += groups[cat].map(a => agentCardHTML(a, extraClass)).join('');
+  });
+  document.getElementById('teknikCards').innerHTML = html;
 }
 
 function deskVerdict(agents){
@@ -967,7 +993,7 @@ function render(){
   renderVolumeProfile(d);
 
   document.getElementById('macroCards').innerHTML = d.macro.map(agentCardHTML).join('');
-  document.getElementById('teknikCards').innerHTML = d.teknik.map(agentCardHTML).join('');
+  renderTeknikGrouped(d.teknik);
   document.getElementById('pozisyonCards').innerHTML = d.pozisyon.map(agentCardHTML).join('');
 
   if(d.cotRatio && d.cotRatio.long_pct != null){
