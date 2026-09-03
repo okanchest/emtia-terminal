@@ -980,6 +980,7 @@ def compute_risk_reward(price, signal, levels):
         return None
 
     return {
+        "entry": round(price, 2),
         "stop": round(stop, 2),
         "target": round(target, 2),
         "risk": round(risk, 2),

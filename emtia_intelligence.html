@@ -964,7 +964,8 @@ function updateTradeSignals(d){
   const renderRR = (rr) => {
     if(!rr) return '';
     const ratioClass = rr.ratio >= 1.5 ? 'good' : rr.ratio < 1 ? 'poor' : '';
-    return `<span class="rr-badge">R:R <span class="rr-ratio ${ratioClass}">1:${rr.ratio}</span><span class="rr-detail">Stop ${rr.stop} · Hedef ${rr.target}</span></span>`;
+    const entryTxt = rr.entry !== undefined && rr.entry !== null ? `Giriş ${rr.entry} · ` : '';
+    return `<span class="rr-badge">R:R <span class="rr-ratio ${ratioClass}">1:${rr.ratio}</span><span class="rr-detail">${entryTxt}Stop ${rr.stop} · Hedef ${rr.target}</span></span>`;
   };
 
   if(ts.scalp){
