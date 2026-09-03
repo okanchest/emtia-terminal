@@ -1078,6 +1078,10 @@ def get_instrument(key: str):
     teknik, price, change_pct = technical_agents(hist)
     macro = macro_agents()
     pozisyon, cot_ratio = positioning_agents(cfg["cot_hint"])
+    pozisyon = list(pozisyon)  # ÖNEMLİ: positioning_agents() cache'li — döndürdüğü
+    # liste, cache içindeki ORİJİNAL nesne. Kopyalamadan append edersek,
+    # cache'in kendisini kalıcı olarak değiştirip her istekte bir kart
+    # daha eklenmesine (bug) sebep oluyoruz. Önce kopyalıyoruz.
 
     # Para Akış Endeksi (MFI) — hızlı karar için Pozisyonlama Desk'e
     # eklendi (fiyat+hacimden hesaplanır, COT'tan bağımsız bir kaynak).
