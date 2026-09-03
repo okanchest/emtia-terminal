@@ -1021,18 +1021,23 @@ function updateTradeSignals(d){
     if(!rr) return '';
     const accountSize = parseFloat(document.getElementById('accountSizeInput').value);
     const riskPercent = parseFloat(document.getElementById('riskPercentInput').value);
-    const contractSize = d.contractSize;
+    const unitPerLot = d.contractSize; // 1.00 lot = bu kadar birim (örn. Altın: 100 ons)
     const unit = d.contractUnit || '';
-    if(!accountSize || !riskPercent || !contractSize || !rr.risk) {
+    if(!accountSize || !riskPercent || !unitPerLot || !rr.risk) {
       return '<div class="position-size-badge">Pozisyon büyüklüğü için üstteki Hesap Büyüklüğü ve Risk % alanlarını doldur.</div>';
     }
     const maxLossAmount = accountSize * (riskPercent / 100);
-    const riskPerContract = rr.risk * contractSize;
-    const contracts = Math.floor(maxLossAmount / riskPerContract);
-    if(contracts < 1){
-      return `<div class="position-size-badge">Bu risk ayarıyla 1 kontrat bile alınamıyor (kontrat başı risk: $${riskPerContract.toFixed(0)}). Hesap büyüklüğünü/risk %'ni artır ya da daha küçük kontratlı bir enstrüman seç.</div>`;
+    const riskPerStandardLot = rr.risk * unitPerLot; // 1.00 lot'ta risk ($)
+    // Mikro lot (0.01) hassasiyetine yuvarla — forex/CFD broker'ların
+    // standart en küçük işlem birimi budur.
+    const rawLots = maxLossAmount / riskPerStandardLot;
+    const lots = Math.floor(rawLots / 0.01) * 0.01;
+    if(lots < 0.01){
+      const riskFor001 = riskPerStandardLot * 0.01;
+      return `<div class="position-size-badge">Bu risk ayarıyla 0.01 lot (mikro lot) bile alınamıyor (0.01 lot başı risk: $${riskFor001.toFixed(2)}). Hesap büyüklüğünü/risk %'ni artır.</div>`;
     }
-    return `<div class="position-size-badge">Pozisyon: <b>${contracts} kontrat</b> (${contractSize} ${unit}/kontrat) — riske edilen: ~$${(contracts * riskPerContract).toFixed(0)}</div>`;
+    const actualRisk = lots * riskPerStandardLot;
+    return `<div class="position-size-badge">Pozisyon: <b>${lots.toFixed(2)} lot</b> (1.00 lot = ${unitPerLot} ${unit}) — riske edilen: ~$${actualRisk.toFixed(2)}</div>`;
   };
 
   if(ts.scalp){
