@@ -42,11 +42,20 @@ app.add_middleware(
 # Enstrüman tanımları — yfinance ticker sembolleri
 # ------------------------------------------------------------------
 INSTRUMENTS = {
-    "altin":    {"label": "Altın (XAU/USD)",    "yf": "GC=F", "cot_hint": "GOLD"},
-    "gumus":    {"label": "Gümüş (XAG/USD)",    "yf": "SI=F", "cot_hint": "SILVER"},
-    "platin":   {"label": "Platin (XPT/USD)",   "yf": "PL=F", "cot_hint": "PLATINUM"},
-    "paladyum": {"label": "Paladyum (XPD/USD)", "yf": "PA=F", "cot_hint": "PALLADIUM"},
-    "bakir":    {"label": "Bakır (HG1!)",       "yf": "HG=F", "cot_hint": "COPPER"},
+    # DENEME NOTU: XAUUSD=X gibi 'spot forex' sembolleri denendi ama
+    # Yahoo Finance'in bu ücretsiz veri kaynağı COMEX vadeli işleminden
+    # (GC=F) daha KÖTÜ çıktı — gerçek broker fiyatından %1'den fazla
+    # sapma gösterdi. COMEX'e geri dönüldü, en azından tutarlı ve
+    # öngörülebilir. Kendi broker'ınla (GCM) karşılaştırırken bunu
+    # aklında tut — hâlâ küçük farklar olabilir, bu normal.
+    # contract_size: COMEX standart kontrat büyüklüğü — broker'dan
+    # broker'a değişebilir, kendi broker'ının spesifikasyonuna göre
+    # ayarlaman önerilir.
+    "altin":    {"label": "Altın (XAU/USD)",    "yf": "GC=F", "cot_hint": "GOLD",      "contract_size": 100, "unit": "ons"},
+    "gumus":    {"label": "Gümüş (XAG/USD)",    "yf": "SI=F", "cot_hint": "SILVER",    "contract_size": 5000, "unit": "ons"},
+    "platin":   {"label": "Platin (XPT/USD)",   "yf": "PL=F", "cot_hint": "PLATINUM",  "contract_size": 50, "unit": "ons"},
+    "paladyum": {"label": "Paladyum (XPD/USD)", "yf": "PA=F", "cot_hint": "PALLADIUM", "contract_size": 100, "unit": "ons"},
+    "bakir":    {"label": "Bakır (HG1!)",       "yf": "HG=F", "cot_hint": "COPPER",    "contract_size": 25000, "unit": "lb"},
 }
 
 # Basit bellek-içi cache (API'leri gereksiz yormamak için)
@@ -1366,6 +1375,8 @@ def get_instrument(key: str):
         "peakDipAlert": {"type": peak_dip_type, "note": peak_dip_note},
         "liquidityLevels": liquidity_levels,
         "volumeProfile": volume_profile,
+        "contractSize": cfg.get("contract_size"),
+        "contractUnit": cfg.get("unit"),
     })
 
 

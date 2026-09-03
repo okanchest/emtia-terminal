@@ -165,6 +165,41 @@
     padding:8px 16px 20px 16px; line-height:1.5;
   }
 
+  .risk-settings-bar{
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    padding:10px 16px; margin-bottom:12px;
+  }
+  .risk-settings-bar .rs-label{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:1.4px;
+    color:var(--gold); font-weight:700; flex:none;
+  }
+  .risk-settings-bar label{
+    display:flex; align-items:center; gap:6px;
+    font-size:11px; color:var(--muted); flex:none;
+  }
+  .risk-settings-bar input{
+    width:80px; background:var(--panel-2); border:1px solid var(--border);
+    color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:12px;
+    padding:4px 8px; border-radius:5px;
+  }
+  .risk-settings-bar input:focus{outline:1px solid var(--gold); border-color:var(--gold);}
+  .risk-settings-bar .rs-hint{
+    font-size:10px; color:var(--muted); opacity:0.7; flex:1; min-width:180px; text-align:right;
+  }
+  @media(max-width:700px){
+    .risk-settings-bar{justify-content:flex-start;}
+    .risk-settings-bar .rs-hint{text-align:left; width:100%;}
+  }
+
+  .position-size-badge{
+    margin-top:6px; font-family:'IBM Plex Mono',monospace; font-size:11px;
+    color:var(--gold); background:rgba(212,162,76,0.1);
+    border:1px solid rgba(212,162,76,0.3); border-radius:5px;
+    padding:4px 8px; display:inline-block;
+  }
+  .position-size-badge b{font-size:12.5px;}
+
   .desks-row{
     display:grid; grid-template-columns:1fr 1.7fr 1fr; gap:16px; margin-bottom:8px;
   }
@@ -408,12 +443,24 @@
     </span>
   </div>
 
+  <div class="risk-settings-bar">
+    <span class="rs-label">RİSK YÖNETİMİ</span>
+    <label>Hesap Büyüklüğü ($)
+      <input type="number" id="accountSizeInput" min="0" step="100" placeholder="10000">
+    </label>
+    <label>İşlem Başına Risk (%)
+      <input type="number" id="riskPercentInput" min="0.1" max="100" step="0.1" placeholder="1">
+    </label>
+    <span class="rs-hint">Bu bilgiler sadece kendi tarayıcında saklanır, hiçbir sunucuya gönderilmez.</span>
+  </div>
+
   <div class="signal-row signal-row-3">
     <div class="signal-card" id="scalpSignalCard">
       <div class="signal-label">SCALP SİNYALİ</div>
       <div class="signal-value" id="scalpSignalValue">—</div>
       <div class="signal-levels" id="scalpSignalLevels"></div>
       <div class="signal-rr" id="scalpSignalRR"></div>
+      <div id="scalpPositionSize"></div>
       <div class="signal-note" id="scalpSignalNote">—</div>
     </div>
     <div class="signal-card" id="daySignalCard">
@@ -421,6 +468,7 @@
       <div class="signal-value" id="daySignalValue">—</div>
       <div class="signal-levels" id="daySignalLevels"></div>
       <div class="signal-rr" id="daySignalRR"></div>
+      <div id="dayPositionSize"></div>
       <div class="signal-note" id="daySignalNote">—</div>
     </div>
     <div class="signal-card" id="weeklySignalCard">
@@ -428,6 +476,7 @@
       <div class="signal-value" id="weeklySignalValue">—</div>
       <div class="signal-levels" id="weeklySignalLevels"></div>
       <div class="signal-rr" id="weeklySignalRR"></div>
+      <div id="weeklyPositionSize"></div>
       <div class="signal-note" id="weeklySignalNote">—</div>
     </div>
   </div>
@@ -968,12 +1017,31 @@ function updateTradeSignals(d){
     return `<span class="rr-badge">R:R <span class="rr-ratio ${ratioClass}">1:${rr.ratio}</span><span class="rr-detail">${entryTxt}Stop ${rr.stop} · Hedef ${rr.target}</span></span>`;
   };
 
+  const renderPositionSize = (rr) => {
+    if(!rr) return '';
+    const accountSize = parseFloat(document.getElementById('accountSizeInput').value);
+    const riskPercent = parseFloat(document.getElementById('riskPercentInput').value);
+    const contractSize = d.contractSize;
+    const unit = d.contractUnit || '';
+    if(!accountSize || !riskPercent || !contractSize || !rr.risk) {
+      return '<div class="position-size-badge">Pozisyon büyüklüğü için üstteki Hesap Büyüklüğü ve Risk % alanlarını doldur.</div>';
+    }
+    const maxLossAmount = accountSize * (riskPercent / 100);
+    const riskPerContract = rr.risk * contractSize;
+    const contracts = Math.floor(maxLossAmount / riskPerContract);
+    if(contracts < 1){
+      return `<div class="position-size-badge">Bu risk ayarıyla 1 kontrat bile alınamıyor (kontrat başı risk: $${riskPerContract.toFixed(0)}). Hesap büyüklüğünü/risk %'ni artır ya da daha küçük kontratlı bir enstrüman seç.</div>`;
+    }
+    return `<div class="position-size-badge">Pozisyon: <b>${contracts} kontrat</b> (${contractSize} ${unit}/kontrat) — riske edilen: ~$${(contracts * riskPerContract).toFixed(0)}</div>`;
+  };
+
   if(ts.scalp){
     const scalpEl = document.getElementById('scalpSignalValue');
     scalpEl.textContent = ts.scalp.signal;
     scalpEl.className = 'signal-value ' + classFor(ts.scalp.signal);
     document.getElementById('scalpSignalLevels').innerHTML = renderLevels(ts.scalp.levels);
     document.getElementById('scalpSignalRR').innerHTML = renderRR(ts.scalp.riskReward);
+    document.getElementById('scalpPositionSize').innerHTML = renderPositionSize(ts.scalp.riskReward);
     document.getElementById('scalpSignalNote').textContent = ts.scalp.note;
     document.getElementById('scalpSignalCard').className = 'signal-card ' + classFor(ts.scalp.signal);
   }
@@ -983,6 +1051,7 @@ function updateTradeSignals(d){
   dayEl.className = 'signal-value ' + classFor(ts.day.signal);
   document.getElementById('daySignalLevels').innerHTML = renderLevels(ts.day.levels);
   document.getElementById('daySignalRR').innerHTML = renderRR(ts.day.riskReward);
+  document.getElementById('dayPositionSize').innerHTML = renderPositionSize(ts.day.riskReward);
   document.getElementById('daySignalNote').textContent = ts.day.note;
   document.getElementById('daySignalCard').className = 'signal-card ' + classFor(ts.day.signal);
 
@@ -991,6 +1060,7 @@ function updateTradeSignals(d){
   weeklyEl.className = 'signal-value ' + classFor(ts.weekly.signal);
   document.getElementById('weeklySignalLevels').innerHTML = renderLevels(ts.weekly.levels);
   document.getElementById('weeklySignalRR').innerHTML = renderRR(ts.weekly.riskReward);
+  document.getElementById('weeklyPositionSize').innerHTML = renderPositionSize(ts.weekly.riskReward);
   document.getElementById('weeklySignalNote').textContent = ts.weekly.note;
   document.getElementById('weeklySignalCard').className = 'signal-card ' + classFor(ts.weekly.signal);
 }
@@ -1155,6 +1225,26 @@ function applyInitialDeskCollapse(){
   });
 }
 
+// Risk yönetimi ayarları — sadece tarayıcıda (localStorage) saklanır,
+// hiçbir sunucuya gönderilmez. Sayfa her açıldığında geri yüklenir.
+function initRiskSettings(){
+  const accountInput = document.getElementById('accountSizeInput');
+  const riskInput = document.getElementById('riskPercentInput');
+  const savedAccount = localStorage.getItem('emtia_accountSize');
+  const savedRisk = localStorage.getItem('emtia_riskPercent');
+  if(savedAccount) accountInput.value = savedAccount;
+  if(savedRisk) riskInput.value = savedRisk;
+
+  const onChange = () => {
+    localStorage.setItem('emtia_accountSize', accountInput.value);
+    localStorage.setItem('emtia_riskPercent', riskInput.value);
+    render(); // pozisyon büyüklüğü hesabını güncel değerlerle yeniden çiz
+  };
+  accountInput.addEventListener('input', onChange);
+  riskInput.addEventListener('input', onChange);
+}
+
+initRiskSettings();
 applyInitialDeskCollapse();
 buildSelector();
 render();          // önce demo veriyle çizer (anında bir şey görünsün diye)
