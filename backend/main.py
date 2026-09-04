@@ -42,20 +42,14 @@ app.add_middleware(
 # Enstrüman tanımları — yfinance ticker sembolleri
 # ------------------------------------------------------------------
 INSTRUMENTS = {
-    # DENEME NOTU: XAUUSD=X gibi 'spot forex' sembolleri denendi ama
-    # Yahoo Finance'in bu ücretsiz veri kaynağı COMEX vadeli işleminden
-    # (GC=F) daha KÖTÜ çıktı — gerçek broker fiyatından %1'den fazla
-    # sapma gösterdi. COMEX'e geri dönüldü, en azından tutarlı ve
-    # öngörülebilir. Kendi broker'ınla (GCM) karşılaştırırken bunu
-    # aklında tut — hâlâ küçük farklar olabilir, bu normal.
-    # contract_size: COMEX standart kontrat büyüklüğü — broker'dan
-    # broker'a değişebilir, kendi broker'ının spesifikasyonuna göre
-    # ayarlaman önerilir.
+    # contract_size: KULLANICININ KENDİ BROKER'I (GCM Yatırım) sözleşme
+    # spesifikasyonlarına göre 5 enstrümanın hepsi kalibre edildi —
+    # COMEX standardından farklı olabilir.
     "altin":    {"label": "Altın (XAU/USD)",    "yf": "GC=F", "cot_hint": "GOLD",      "contract_size": 100, "unit": "ons"},
-    "gumus":    {"label": "Gümüş (XAG/USD)",    "yf": "SI=F", "cot_hint": "SILVER",    "contract_size": 5000, "unit": "ons"},
-    "platin":   {"label": "Platin (XPT/USD)",   "yf": "PL=F", "cot_hint": "PLATINUM",  "contract_size": 50, "unit": "ons"},
+    "gumus":    {"label": "Gümüş (XAG/USD)",    "yf": "SI=F", "cot_hint": "SILVER",    "contract_size": 10000, "unit": "ons"},
+    "platin":   {"label": "Platin (XPT/USD)",   "yf": "PL=F", "cot_hint": "PLATINUM",  "contract_size": 100, "unit": "ons"},
     "paladyum": {"label": "Paladyum (XPD/USD)", "yf": "PA=F", "cot_hint": "PALLADIUM", "contract_size": 100, "unit": "ons"},
-    "bakir":    {"label": "Bakır (HG1!)",       "yf": "HG=F", "cot_hint": "COPPER",    "contract_size": 25000, "unit": "lb"},
+    "bakir":    {"label": "Bakır (HG1!)",       "yf": "HG=F", "cot_hint": "COPPER",    "contract_size": 10000, "unit": "lb"},
 }
 
 # Basit bellek-içi cache (API'leri gereksiz yormamak için)
